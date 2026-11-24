@@ -217,20 +217,23 @@ PARAMS = {
 # ==============================================================================
 _dd = dt.date.today()
 DASH = {
-    "textSz": "tiny",
-    "showDetail": True,
-    "showMk": True,
-    "lblMode": "ON",
+    "textSz": "tiny",              # "tiny", "small", "normal" (table font)
+    "showDetail": True,            # True = SIGNAL table ki saari detail rows (Bull/Bear, EMA, VWAP, RSI, ADX ...)
+    "showMk": True,                # Chart par BUY/EXIT markers
+    "lblMode": "ON",               # "ON" = marker par poora text | "OFF" = sirf BUY CE / BUY PE / EXIT
     "lblBars": 0,
-    "wfArrow": True,
-    "wfMaShow": False,
+    "wfArrow": True,               # Chart par FINAL BUY (blue) arrow
+    "wfMaShow": False,             # Final Buy rule D ki fast/slow MA line chart par
+    # Table positions: Top Left/Center/Right, Middle Left/Right, Bottom Left/Center/Right
     "posSig": "Top Right", "posLg": "Bottom Right", "posBr": "Top Left", "posOi": "Middle Left",
     "posLs": "Bottom Left", "scPos": "Top Center", "scPosA": "Middle Right", "posJ": "Bottom Center",
     "posPh": "Bottom Center", "posXs": "Middle Right", "gdPos": "Top Center", "vp_pos": "Middle Left",
+    # Table show/hide
     "showLog": True, "showList": True, "scAll": True, "jShow": True, "phShow": True,
     "xsShow": True, "gdShow": True, "vp_showTbl": True,
-    "jPg": 1,
-    "vp_useSpot": True,
+    "jPg": 1,                      # Journal page number
+    "vp_useSpot": True,            # VOL PCR table me spot/chart source dikhane ke liye
+    # Phase-wise stats ke dates (entry date se): P1 = ph1S..ph2S, P2 = ph2S..phE
     "ph1S": (_dd - dt.timedelta(days=60)).isoformat(),
     "ph2S": (_dd - dt.timedelta(days=30)).isoformat(),
     "phE": _dd.isoformat(),
@@ -420,20 +423,29 @@ class BrokerConnector:
         self.cfg = cfg
         self.dhan = None
         if self.broker == "DHAN":
-            from dhanhq import dhanhq
+            import dhanhq as _dh
             token = str(cfg["DHAN_ACCESS_TOKEN"]).strip()
             cid = str(cfg["DHAN_CLIENT_ID"]).strip()
-            # SAFE INITIALIZATION TO AVOID POSITIONAL ARGUMENT ERRORS
+            dhanhq = _dh.dhanhq
+            last_err = None
             try:
-                self.dhan = dhanhq(client_id=cid, access_token=token)
-            except Exception:
+                DhanContext = getattr(_dh, "DhanContext", None)
+                if DhanContext is None:
+                    from dhanhq.dhan_context import DhanContext
+                self.dhan = dhanhq(DhanContext(cid, token))
+            except Exception as e1:
+                last_err = e1
                 try:
                     self.dhan = dhanhq(cid, token)
-                except Exception:
+                except Exception as e2:
+                    last_err = e2
                     try:
-                        self.dhan = dhanhq(token)
-                    except Exception as e:
-                        raise RuntimeError(f"Dhan init failed: {e}")
+                        self.dhan = dhanhq(client_id=cid, access_token=token)
+                    except Exception as e3:
+                        try:
+                            self.dhan = dhanhq(token)
+                        except Exception as e4:
+                            raise RuntimeError(f"Dhan init failed: {last_err} | {e2} | {e3} | {e4}")
         elif self.broker == "UPSTOX":
             self.headers = {
                 "Accept": "application/json",
@@ -1774,7 +1786,7 @@ class NiftyOptionProEngine:
         elif (sigCE and not diOkCE) or (sigPE and not diOkCE): why = f"DI/ADX filter ({PARAMS['diNeed']} of 3 TF)"
         elif (sigCE and not dgCE) or (sigPE and not dgCE): why = f"Daily gate 7d:{dgS1:+.2f}% 5d:{dgS2:+.2f}%"
         elif sigPE and dgPE and not peScOk: why = f"PE score {peScore}/5 (need {PARAMS['peScMin']})"
-        elif (sigCE and not br["scCE"]) or (sigPE and not br["scCE"]): why = "Sector signal ke khilaf"
+        elif (sigCE and not br["scCE"]) or (sigPE and not br["scPE"]): why = "Sector signal ke khilaf"
         elif not v22CE or not v22PE: why = "v22 filter block"
         else: why = "Signal OK"
 
