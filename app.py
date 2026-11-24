@@ -87,10 +87,10 @@ def get_option_strike(spot_price, signal_type, strike_mode="ATM", step=50):
     atm_strike = round(spot_price / step) * step
     if signal_type == "BUY_CE":
         strike = atm_strike if strike_mode == "ATM" else atm_strike - step
-        return f"{int(strike)} CE"
+        return str(int(strike)) + " CE"
     elif signal_type == "BUY_PE":
         strike = atm_strike if strike_mode == "ATM" else atm_strike + step
-        return f"{int(strike)} PE"
+        return str(int(strike)) + " PE"
     return ""
 
 # ==========================================
@@ -128,7 +128,7 @@ def fetch_live_nifty_5min(client_id, access_token):
                 "Close": data["close"]
             })
             return df, None
-        return None, f"Dhan API Response: {data}"
+        return None, "Dhan API Response: " + str(data)
     except Exception as e:
         return None, str(e)
 
@@ -138,7 +138,7 @@ def fetch_live_nifty_5min(client_id, access_token):
 def send_telegram_alert(bot_token, chat_id, message):
     if not bot_token or not chat_id:
         return False
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    url = "https://api.telegram.org/bot" + str(bot_token) + "/sendMessage"
     payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
     try:
         resp = requests.post(url, json=payload, timeout=5)
@@ -149,9 +149,17 @@ def send_telegram_alert(bot_token, chat_id, message):
 def execute_order(mode, client_id, access_token, security_id, transaction_type, qty, signal_info, tg_token, tg_chat_id):
     now_str = get_ist_now().strftime("%Y-%m-%d %I:%M:%S %p")
     if mode == "Live Paper Trading":
-        msg = f"馃摑 *[PAPER TRADE - {transaction_type}]* Time: `{now_str} IST` | Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}` | Spot: `{signal_info['Spot']}` | Qty: `{qty}` | Active Trades: `{len(st.session_state.active_positions)}`"
+        msg = (
+            "[PAPER TRADE - " + str(transaction_type) + "] "
+            "Time: " + now_str + " IST | "
+            "Signal: " + str(signal_info["Signal"]) + " | "
+            "Strike: " + str(signal_info["Strike"]) + " | "
+            "Spot: " + str(signal_info["Spot"]) + " | "
+            "Qty: " + str(qty) + " | "
+            "Active Trades: " + str(len(st.session_state.active_positions))
+        )
         send_telegram_alert(tg_token, tg_chat_id, msg)
-        return {"status": "PAPER_FILLED", "orderId": f"PAPER_{int(datetime.now().timestamp())}"}
+        return {"status": "PAPER_FILLED", "orderId": "PAPER_" + str(int(datetime.now().timestamp()))}
 
     elif mode == "Live Real Trading":
         url = "https://api.dhan.co/v2/orders"
@@ -172,7 +180,15 @@ def execute_order(mode, client_id, access_token, security_id, transaction_type, 
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=5)
             res_json = resp.json()
-            msg = f"馃殌 *[LIVE REAL TRADE - {transaction_type}]* Time: `{now_str} IST` | Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}` | Spot: `{signal_info['Spot']}` | Qty: `{qty}` | Resp: `{res_json}`"
+            msg = (
+                "[LIVE REAL TRADE - " + str(transaction_type) + "] "
+                "Time: " + now_str + " IST | "
+                "Signal: " + str(signal_info["Signal"]) + " | "
+                "Strike: " + str(signal_info["Strike"]) + " | "
+                "Spot: " + str(signal_info["Spot"]) + " | "
+                "Qty: " + str(qty) + " | "
+                "Resp: " + str(res_json)
+            )
             send_telegram_alert(tg_token, tg_chat_id, msg)
             return res_json
         except Exception as e:
@@ -189,7 +205,7 @@ def process_live_market_tick(
 ):
     now_ist = get_ist_now()
     if not is_valid_market_time(now_ist, trade_start_t, trade_end_t):
-        return f"Outside Trading Window ({format_time_12h(trade_start_t)} - {format_time_12h(trade_end_t)} IST)."
+        return "Outside Trading Window (" + format_time_12h(trade_start_t) + " - " + format_time_12h(trade_end_t) + " IST)."
 
     df = compute_indicators(df)
     if len(df) < 3:
@@ -217,7 +233,7 @@ def process_live_market_tick(
         if now_ist.time() >= square_off_t:
             raw_move = (current_spot - entry_spot) if sig == "BUY_CE" else (entry_spot - current_spot)
             pts = round(raw_move * 0.5, 2)
-            exit_reason = f"TIME EXIT ({format_time_12h(square_off_t)})"
+            exit_reason = "TIME EXIT (" + format_time_12h(square_off_t) + ")"
         elif fav_move * 0.5 >= t1_pts:
             pts = float(t1_pts)
             exit_reason = "WIN (T1)"
@@ -241,7 +257,7 @@ def process_live_market_tick(
             }
             st.session_state.completed_trades.append(trade_record)
             execute_order(mode, client_id, access_token, "0", "SELL", lot_size, trade_record, tg_token, tg_chat_id)
-            status_notes.append(f"Closed {pos['Strike']} ({exit_reason}) | PnL: 鈧箋pnl_inr}")
+            status_notes.append("Closed " + str(pos["Strike"]) + " (" + str(exit_reason) + ") | PnL: Rs " + str(pnl_inr))
         else:
             remaining_positions.append(pos)
 
@@ -276,14 +292,14 @@ def process_live_market_tick(
                     }
                     st.session_state.active_positions.append(sig_info)
                     execute_order(mode, client_id, access_token, "0", "BUY", lot_size, sig_info, tg_token, tg_chat_id)
-                    status_notes.append(f"New {mode} Entry: {signal} ({strike_label}) @ Spot {current_spot:.2f}")
+                    status_notes.append("New " + str(mode) + " Entry: " + str(signal) + " (" + str(strike_label) + ") @ Spot " + str(round(current_spot, 2)))
                 else:
-                    status_notes.append(f"Signal {signal} Skipped: Limit reached.")
+                    status_notes.append("Signal " + str(signal) + " Skipped: Limit reached.")
 
     if status_notes:
         return " | ".join(status_notes)
 
-    return f"Monitoring Live @ {now_ist.strftime('%I:%M:%S %p')} IST | Spot: {current_spot:.2f} | Open Trades: {len(st.session_state.active_positions)}"
+    return "Monitoring Live @ " + now_ist.strftime("%I:%M:%S %p") + " IST | Spot: " + str(round(current_spot, 2)) + " | Open Trades: " + str(len(st.session_state.active_positions))
 
 # ==========================================
 # HISTORICAL BACKTEST ENGINE
@@ -337,7 +353,7 @@ def run_historical_backtest(
                 if future_time.date() != row_time.date() or future_time.time() >= square_off_t:
                     move = (df.loc[j - 1, "Close"] - spot) if signal == "BUY_CE" else (spot - df.loc[j - 1, "Close"])
                     pts = round(move * 0.5, 2)
-                    outcome = f"TIME EXIT ({format_time_12h(square_off_t)})"
+                    outcome = "TIME EXIT (" + format_time_12h(square_off_t) + ")"
                     exit_idx = j
                     break
 
@@ -423,17 +439,22 @@ with st.sidebar:
 
 now_ist = get_ist_now()
 market_open = is_valid_market_time(now_ist, trade_start_time, trade_end_time)
-window_str = f"{format_time_12h(trade_start_time)} - {format_time_12h(trade_end_time)} IST"
-status_label = f"ACTIVE ({window_str})" if market_open else f"BLOCKED (Outside {window_str})"
-trade_rule_label = f"Multi-Trade (Max {max_concurrent})" if allow_multiple_trades else "Single Trade Only"
+window_str = format_time_12h(trade_start_time) + " - " + format_time_12h(trade_end_time) + " IST"
+status_label = ("ACTIVE (" + window_str + ")") if market_open else ("BLOCKED (Outside " + window_str + ")")
+trade_rule_label = ("Multi-Trade (Max " + str(max_concurrent) + ")") if allow_multiple_trades else "Single Trade Only"
 
-st.info(f"IST Time: **{now_ist.strftime('%Y-%m-%d %I:%M:%S %p')}** | Window: **{status_label}** | Sq-Off: **{format_time_12h(auto_sq_off_time)}** | Rule: **{trade_rule_label}**")
+st.info(
+    "IST Time: **" + now_ist.strftime("%Y-%m-%d %I:%M:%S %p") + "** | "
+    "Window: **" + status_label + "** | "
+    "Sq-Off: **" + format_time_12h(auto_sq_off_time) + "** | "
+    "Rule: **" + trade_rule_label + "**"
+)
 
 # ==========================================
 # EXECUTION LOGIC
 # ==========================================
 if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
-    st.subheader(f"{execution_mode} Dashboard ({window_str})")
+    st.subheader(execution_mode + " Dashboard (" + window_str + ")")
     col_a, col_b = st.columns([1, 1])
     with col_a:
         auto_refresh = st.checkbox("Auto-Refresh Live Market Feed (Every 15 Seconds)", value=False)
@@ -449,7 +470,7 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
     else:
         live_df, err = fetch_live_nifty_5min(dhan_client_id, dhan_access_token)
         if err:
-            st.error(f"Data Fetch Error: {err}")
+            st.error("Data Fetch Error: " + str(err))
         elif live_df is not None:
             status_msg = process_live_market_tick(
                 live_df, execution_mode, lot_qty, t1_target, sl_points,
@@ -461,7 +482,7 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
             st.success(status_msg)
 
             if st.session_state.active_positions:
-                st.subheader(f"Active Open Positions ({len(st.session_state.active_positions)})")
+                st.subheader("Active Open Positions (" + str(len(st.session_state.active_positions)) + ")")
                 st.dataframe(pd.DataFrame(st.session_state.active_positions), use_container_width=True)
 
             if st.session_state.completed_trades:
@@ -470,8 +491,8 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
                 st.dataframe(pt_df, use_container_width=True)
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Total Trades", len(pt_df))
-                m2.metric("Win Rate", f"{(pt_df['Points'] > 0).mean()*100:.1f}%")
-                m3.metric("Total PnL (INR)", f"鈧箋pt_df['PnL (INR)'].sum():,}")
+                m2.metric("Win Rate", str(round((pt_df["Points"] > 0).mean() * 100, 1)) + "%")
+                m3.metric("Total PnL (INR)", "Rs " + "{:,}".format(pt_df["PnL (INR)"].sum()))
                 st.download_button("Download CSV", pt_df.to_csv(index=False).encode("utf-8"), "nifty_trades.csv", "text/csv")
 
     if auto_refresh:
@@ -479,7 +500,7 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
         st.rerun()
 
 else:
-    st.subheader(f"Historical CSV Backtester ({window_str})")
+    st.subheader("Historical CSV Backtester (" + window_str + ")")
     uploaded_ohlc = st.file_uploader("Upload 5-Min NIFTY OHLC CSV", type=["csv"])
     if uploaded_ohlc is not None:
         raw_df = pd.read_csv(uploaded_ohlc)
@@ -493,6 +514,6 @@ else:
         if not results_df.empty:
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Trades", len(results_df))
-            c2.metric("Win Rate", f"{(results_df['Points'] > 0).mean()*100:.1f}%")
-            c3.metric("Net PnL (INR)", f"鈧箋results_df['PnL (INR)'].sum():,}")
+            c2.metric("Win Rate", str(round((results_df["Points"] > 0).mean() * 100, 1)) + "%")
+            c3.metric("Net PnL (INR)", "Rs " + "{:,}".format(results_df["PnL (INR)"].sum()))
             st.download_button("Download Clean Backtest CSV", results_df.to_csv().encode("utf-8"), "nifty_clean_backtest.csv", "text/csv")
