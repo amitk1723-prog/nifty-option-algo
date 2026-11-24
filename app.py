@@ -1,308 +1,601 @@
-import os
-import time
-import json
-import math
-import requests
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codegreen}{rgb}{0,0.5,0}
+\definecolor{codegray}{rgb}{0.45,0.45,0.45}
+\definecolor{codeblue}{rgb}{0.1,0.2,0.7}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{codebg},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codeblue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{red!70!black},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    numbers=left,
+    numbersep=6pt,
+    showstringspaces=false,
+    tabsize=4,
+    frame=single
+}
+
+\title{\textbf{NIFTY 50 Option Algo Full Code (Strict 09:15 AM -- 03:30 PM Dropdown Slots + Live Paper + Backtest)}}
+\author{Amit K. -- Nifty Option Algo (`nifty-option-algo`)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Key Improvements in Version 5}
+\begin{itemize}
+    \item \textbf{Bounded Market-Hours Dropdowns (\texttt{09:15 AM -- 03:30 PM IST}):} Ab 24-hour clock ki jagah sidebar mein \texttt{09:15 AM} se \texttt{03:30 PM} ke andar ke hi 5-minute time slots (jaise \texttt{09:15 AM}, \texttt{09:30 AM}, \texttt{10:00 AM} ... \texttt{03:20 PM}, \texttt{03:30 PM}) dropdown list mein dikhenge. Isse galti se bhi market hours ke bahar ka time select nahi ho payega.
+    \item \textbf{Applied Across All Modes:} Yeh dropdown time selection \textbf{Live Real Trading}, \textbf{Live Paper Trading}, aur \textbf{Historical CSV Backtest} teeno par kaam karega.
+    \item \textbf{Single vs. Multiple Trade Toggle:} Ek trade chalte hue dusra trade lena hai ya block karna hai, uska control bhi sidebar mein hai.
+\end{itemize}
+
+\section*{Complete Python Code (\texttt{app.py})}
+\begin{lstlisting}[language=Python, style=pythonstyle]
+import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-import streamlit as st
-from dhanhq import dhanhq
+import requests
+import time as time_module
+from datetime import datetime, time, timedelta
+import pytz
 
 # ==========================================
-# 1. PAGE CONFIG & UI SETUP
+# PAGE CONFIGURATION & APP SETUP
 # ==========================================
-st.set_page_config(
-    page_title="NIFTY OPTION SIGNAL PRO v28",
-    page_icon="ðŸ“ˆ",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="NIFTY 50 Option Algo (09:15 AM - 03:30 PM IST)", layout="wide")
+st.title("NIFTY 50 Options Algo Trading (Live, Live Paper & Backtest)")
 
-st.title("NIFTY OPTION SIGNAL PRO v28 - LIVE CONTROL & 12-TABLE DASHBOARD")
+IST = pytz.timezone("Asia/Kolkata")
 
 # ==========================================
-# 2. SIDEBAR: BROKER & API SETTINGS
+# GENERATE 5-MIN TIME SLOTS (09:15 AM TO 03:30 PM)
 # ==========================================
-st.sidebar.header("Broker & API Settings")
-broker = st.sidebar.selectbox("Select Broker", ["DHAN", "UPSTOX"], index=0)
-chart_symbol = st.sidebar.selectbox("Chart Symbol", ["NIFTY_SPOT", "NIFTY_FUT"], index=0)
-client_id = st.sidebar.text_input("Dhan Client ID", value="")
-access_token = st.sidebar.text_input("Broker Access Token", type="password", value="")
+def generate_market_time_slots():
+    """
+    Generates exact 5-minute interval time objects strictly from 09:15 AM to 03:30 PM IST.
+    """
+    slots = []
+    curr = datetime(2026, 1, 1, 9, 15)
+    end = datetime(2026, 1, 1, 15, 30)
+    while curr <= end:
+        slots.append(curr.time())
+        curr += timedelta(minutes=5)
+    return slots
 
-with st.sidebar.expander("Telegram Alerts (Optional)", expanded=False):
-    tg_enabled = st.checkbox("Enable Telegram Alerts", value=False)
-    tg_token = st.text_input("Bot Token", type="password")
-    tg_chat_id = st.text_input("Chat ID")
+MARKET_SLOTS = generate_market_time_slots()
 
-# ==========================================
-# 3. SIDEBAR: STRATEGY PARAMETERS (8 EXPANDERS)
-# ==========================================
-with st.sidebar.expander("1. Run Mode, Strike, Expiry & Exit", expanded=True):
-    run_mode = st.selectbox("Run Mode", ["LIVE", "BACKTEST"], index=0)
-    backtest_days = st.number_input("Backtest Days", min_value=1, max_value=365, value=30)
-    bt_entry_type = st.selectbox("Backtest Entry Type", ["BOTH", "BLUE_ONLY", "PRE_ALERT"], index=0)
-    auto_live_order = st.checkbox("Auto Place Live Order (Real Trades)", value=False)
-    product_type = st.selectbox("Product Type", ["INTRADAY", "MARGIN"], index=0)
-    strike_mode = st.selectbox("Strike Mode", ["ATM", "ITM1", "ITM2", "OTM1"], index=0)
-    expiry_mode = st.selectbox("Expiry Mode", ["CURRENT_WEEK", "NEXT_WEEK", "MANUAL"], index=0)
-    manual_expiry = st.text_input("Manual Expiry (YYYY-MM-DD)", value="")
-    exit_mode = st.selectbox("Exit Mode", ["T1", "T1_T2", "TRAILING"], index=0)
-    t1_partial_pct = st.slider("T1 Partial Exit % (for T1_T2)", 10, 90, 50)
-    use_hl_target = st.checkbox("Use High/Low for Target Touch", value=True)
-
-with st.sidebar.expander("2. G0: Capital, Risk, Session & Trade Setup", expanded=False):
-    capital = st.number_input("Capital (INR)", min_value=5000, value=50000, step=5000)
-    risk_per_trade_pct = st.slider("Risk per Trade (%)", 0.5, 10.0, 2.0)
-    max_trades_day = st.number_input("Max Trades / Day", 1, 20, 3)
-    lot_size = st.number_input("NIFTY Lot Size", 25, 750, 75, step=25)
-    num_lots = st.number_input("Lots per Trade", 1, 50, 1)
-    session_start = st.text_input("Session Start (HH:MM)", "09:20")
-    session_end = st.text_input("Session End (HH:MM)", "15:10")
-    sq_off_time = st.text_input("Auto Square-off (HH:MM)", "15:20")
-
-with st.sidebar.expander("3. MTF, ADX, DI & Direction Filters", expanded=False):
-    hma_fast = st.number_input("HMA Fast Length", 5, 100, 21)
-    hma_slow = st.number_input("HMA Slow Length", 10, 200, 55)
-    use_mtf = st.checkbox("Enable 15m MTF Trend Confirmation", value=True)
-    use_adx = st.checkbox("Enable ADX Strength Filter", value=True)
-    adx_min = st.number_input("Min ADX Threshold", 10, 50, 20)
-    use_di = st.checkbox("Require +DI / -DI Alignment", value=True)
-
-with st.sidebar.expander("4. G5: Final Buy (Blue Arrow) Settings", expanded=False):
-    sl_points = st.number_input("Option Stop Loss (Points)", 5, 100, 20)
-    t1_points = st.number_input("Target 1 (Points)", 10, 200, 30)
-    t2_points = st.number_input("Target 2 (Points)", 20, 400, 60)
-    min_prob_score = st.slider("Min Probability Score (%)", 50, 95, 70)
-
-with st.sidebar.expander("5. G7: Daily 20MA Direction Gate", expanded=False):
-    use_daily_20ma = st.checkbox("Enable Daily 20MA Gate", value=True)
-    daily_ma_len = st.number_input("Daily MA Length", 5, 100, 20)
-
-with st.sidebar.expander("6. G8: v22 Pro Filters & Trailing", expanded=False):
-    enable_trailing = st.checkbox("Enable Trailing SL after T1", value=True)
-    trail_step = st.number_input("Trailing Step (Points)", 5, 50, 10)
-    avoid_chop = st.checkbox("Avoid Sideways/Choppy Zone", value=True)
-
-with st.sidebar.expander("7. G3/G4/G9: Option OI, VOL PCR & Futures OI", expanded=False):
-    use_oi_filter = st.checkbox("Enable Option Chain OI/COI Filter", value=True)
-    pcr_bull_min = st.number_input("Bullish PCR Min", 0.5, 2.0, 1.05)
-    pcr_bear_max = st.number_input("Bearish PCR Max", 0.3, 1.5, 0.95)
-    use_fut_oi = st.checkbox("Enable Futures OI Buildup Filter", value=True)
-
-with st.sidebar.expander("8. G1/G2/G5C: Pre-Alert, Breadth & Sector", expanded=False):
-    show_pre_alerts = st.checkbox("Show Pre-Alert Signals", value=True)
-    use_breadth = st.checkbox("Check Market Breadth (Adv/Dec)", value=False)
-    use_sector = st.checkbox("Check Heavyweight Sector Sync", value=False)
+def format_time_12h(t_obj):
+    return datetime.combine(datetime.today(), t_obj).strftime("%I:%M %p")
 
 # ==========================================
-# 4. BROKER CONNECTOR (FIXED DHANHQ INIT)
+# INITIALIZE SESSION STATE FOR TRADES
 # ==========================================
-class BrokerConnector:
-    def __init__(self, broker_name, cid, token):
-        self.broker = broker_name
-        self.client_id = str(cid).strip()
-        self.access_token = str(token).strip()
-        self.dhan = None
-        self.connected = False
-        self.error_msg = ""
-
-        if self.client_id and self.access_token:
-            try:
-                if self.broker == "DHAN":
-                    try:
-                        self.dhan = dhanhq(self.client_id, self.access_token)
-                    except TypeError:
-                        try:
-                            from dhanhq import DhanContext
-                            ctx = DhanContext(self.client_id, self.access_token)
-                            self.dhan = dhanhq(ctx)
-                        except Exception:
-                            self.dhan = dhanhq(client_id=self.client_id, access_token=self.access_token)
-                    self.connected = True
-            except Exception as e:
-                self.error_msg = str(e)
-                self.connected = False
-
-    def get_funds(self):
-        if not self.connected or not self.dhan:
-            return {"error": "Not connected"}
-        try:
-            return self.dhan.get_fund_limits()
-        except Exception as e:
-            return {"error": str(e)}
-
-    def place_option_order(self, security_id, txn_type, qty, prod_type="INTRADAY"):
-        if not self.connected or not self.dhan:
-            return {"status": "ERROR", "remarks": "Broker not connected"}
-        try:
-            dhan_txn = self.dhan.BUY if txn_type == "BUY" else self.dhan.SELL
-            dhan_prod = self.dhan.INTRA if prod_type == "INTRADAY" else self.dhan.MARGIN
-            resp = self.dhan.place_order(
-                security_id=str(security_id),
-                exchange_segment=self.dhan.NSE_FNO,
-                transaction_type=dhan_txn,
-                quantity=int(qty),
-                order_type=self.dhan.MARKET,
-                product_type=dhan_prod,
-                price=0
-            )
-            return resp
-        except Exception as e:
-            return {"status": "ERROR", "remarks": str(e)}
+if "completed_trades" not in st.session_state:
+    st.session_state.completed_trades = []
+if "active_positions" not in st.session_state:
+    st.session_state.active_positions = []
+if "last_signal_candle" not in st.session_state:
+    st.session_state.last_signal_candle = None
 
 # ==========================================
-# 5. STRATEGY ENGINE & SIGNAL CALCULATOR
+# STRICT MARKET HOURS & TIMEZONE FILTER
 # ==========================================
-def wma(series, length):
-    weights = np.arange(1, length + 1)
-    return series.rolling(length).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
+def get_ist_now():
+    return datetime.now(IST)
 
-def hma(series, length):
-    half_len = max(1, int(length / 2))
-    sqrt_len = max(1, int(math.sqrt(length)))
-    wmaf = wma(series, half_len)
-    wmas = wma(series, length)
-    diff = 2 * wmaf - wmas
-    return wma(diff, sqrt_len)
+def is_valid_market_time(dt_obj, start_time, end_time):
+    """
+    Ensures trades/signals ONLY occur on Weekdays (Mon-Fri)
+    strictly within the user-selected 09:15 AM - 03:30 PM IST window.
+    """
+    if dt_obj.tzinfo is None:
+        dt_obj = IST.localize(dt_obj)
+    else:
+        dt_obj = dt_obj.astimezone(IST)
 
-def compute_indicators(df):
+    # Monday = 0, Friday = 4 | Saturday = 5, Sunday = 6
+    if dt_obj.weekday() >= 5:
+        return False
+
+    current_t = dt_obj.time()
+    return start_time <= current_t <= end_time
+
+# ==========================================
+# TECHNICAL INDICATORS (DUAL HMA)
+# ==========================================
+def wma(series, period):
+    weights = np.arange(1, period + 1)
+    return series.rolling(period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
+
+def hma(series, period):
+    half_length = int(period / 2)
+    sqrt_length = int(np.sqrt(period))
+    wma_half = wma(series, half_length)
+    wma_full = wma(series, period)
+    diff = 2 * wma_half - wma_full
+    return wma(diff, sqrt_length)
+
+def compute_indicators(df, fast_hma_len=9, slow_hma_len=21):
     df = df.copy()
-    df["HMA_FAST"] = hma(df["Close"], hma_fast)
-    df["HMA_SLOW"] = hma(df["Close"], hma_slow)
-    df["TREND"] = np.where(df["HMA_FAST"] > df["HMA_SLOW"], "BULLISH", "BEARISH")
-    df["SIGNAL"] = "NONE"
-    bull_cross = (df["HMA_FAST"] > df["HMA_SLOW"]) & (df["HMA_FAST"].shift(1) <= df["HMA_SLOW"].shift(1))
-    bear_cross = (df["HMA_FAST"] < df["HMA_SLOW"]) & (df["HMA_FAST"].shift(1) >= df["HMA_SLOW"].shift(1))
-    df.loc[bull_cross, "SIGNAL"] = "BUY_CE"
-    df.loc[bear_cross, "SIGNAL"] = "BUY_PE"
+    df["HMA_Fast"] = hma(df["Close"], fast_hma_len)
+    df["HMA_Slow"] = hma(df["Close"], slow_hma_len)
     return df
 
-def get_strike(spot_price, signal_type, mode):
-    atm = round(spot_price / 50) * 50
+# ==========================================
+# STRIKE SELECTION (ATM / ITM-1)
+# ==========================================
+def get_option_strike(spot_price, signal_type, strike_mode="ATM", step=50):
+    atm_strike = round(spot_price / step) * step
     if signal_type == "BUY_CE":
-        if mode == "ATM": return atm
-        if mode == "ITM1": return atm - 50
-        if mode == "ITM2": return atm - 100
-        if mode == "OTM1": return atm + 50
-    else:
-        if mode == "ATM": return atm
-        if mode == "ITM1": return atm + 50
-        if mode == "ITM2": return atm + 100
-        if mode == "OTM1": return atm - 50
-    return atm
+        strike = atm_strike if strike_mode == "ATM" else atm_strike - step
+        return f"{int(strike)} CE"
+    elif signal_type == "BUY_PE":
+        strike = atm_strike if strike_mode == "ATM" else atm_strike + step
+        return f"{int(strike)} PE"
+    return ""
 
 # ==========================================
-# 6. BACKTEST & JOURNAL FUNCTIONS
+# LIVE NIFTY 5-MIN DATA FETCHER (DHAN API)
 # ==========================================
-JOURNAL_FILE = "live_real_trades_journal.csv"
+def fetch_live_nifty_5min(client_id, access_token):
+    url = "https://api.dhan.co/v2/charts/intraday"
+    headers = {
+        "access-token": access_token,
+        "client-id": client_id,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "securityId": "13",
+        "exchangeSegment": "IDX_I",
+        "instrument": "INDEX",
+        "interval": "5",
+        "oi": False
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=8)
+        data = resp.json()
+        if "timestamp" in data and len(data["timestamp"]) > 0:
+            df = pd.DataFrame({
+                "Time": [datetime.fromtimestamp(ts, tz=IST).strftime("%Y-%m-%d %H:%M") for ts in data["timestamp"]],
+                "Open": data["open"],
+                "High": data["high"],
+                "Low": data["low"],
+                "Close": data["close"]
+            })
+            return df, None
+        return None, f"Dhan API Response: {data}"
+    except Exception as e:
+        return None, str(e)
 
-def log_real_trade(trade_dict):
-    df_new = pd.DataFrame([trade_dict])
-    if os.path.exists(JOURNAL_FILE):
-        df_old = pd.read_csv(JOURNAL_FILE)
-        df_all = pd.concat([df_old, df_new], ignore_index=True)
-    else:
-        df_all = df_new
-    df_all.to_csv(JOURNAL_FILE, index=False)
+# ==========================================
+# TELEGRAM & DHAN API ORDER EXECUTION
+# ==========================================
+def send_telegram_alert(bot_token, chat_id, message):
+    if not bot_token or not chat_id:
+        return False
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        resp = requests.post(url, json=payload, timeout=5)
+        return resp.status_code == 200
+    except Exception:
+        return False
 
-def run_historical_backtest(days=30):
-    np.random.seed(42)
-    dates = pd.date_range(end=datetime.now(), periods=days * 75, freq="5min")
-    price = 24200 + np.cumsum(np.random.randn(len(dates)) * 12)
-    df = pd.DataFrame({
-        "Datetime": dates,
-        "Open": price,
-        "High": price + np.abs(np.random.randn(len(dates)) * 8),
-        "Low": price - np.abs(np.random.randn(len(dates)) * 8),
-        "Close": price + np.random.randn(len(dates)) * 5
-    })
+def execute_order(mode, client_id, access_token, security_id, transaction_type, qty, signal_info, tg_token, tg_chat_id):
+    now_str = get_ist_now().strftime("%Y-%m-%d %I:%M:%S %p")
+    if mode == "Live Paper Trading":
+        msg = (
+            f"馃摑 *[PAPER TRADE - {transaction_type}]*
+"
+            f"Time: `{now_str} IST`
+"
+            f"Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}`
+"
+            f"Spot: `{signal_info['Spot']}` | Qty: `{qty}`
+"
+            f"Active Trades: `{len(st.session_state.active_positions)}`"
+        )
+        send_telegram_alert(tg_token, tg_chat_id, msg)
+        return {"status": "PAPER_FILLED", "orderId": f"PAPER_{int(datetime.now().timestamp())}"}
+
+    elif mode == "Live Real Trading":
+        url = "https://api.dhan.co/v2/orders"
+        headers = {
+            "access-token": access_token,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "dhanClientId": client_id,
+            "transactionType": transaction_type,
+            "exchangeSegment": "NSE_FNO",
+            "productType": "INTRADAY",
+            "orderType": "MARKET",
+            "validity": "DAY",
+            "securityId": str(security_id),
+            "quantity": int(qty)
+        }
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=5)
+            res_json = resp.json()
+            msg = (
+                f"馃殌 *[LIVE REAL TRADE - {transaction_type}]*
+"
+                f"Time: `{now_str} IST`
+"
+                f"Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}`
+"
+                f"Spot: `{signal_info['Spot']}` | Qty: `{qty}`
+"
+                f"Broker Resp: `{res_json}`"
+            )
+            send_telegram_alert(tg_token, tg_chat_id, msg)
+            return res_json
+        except Exception as e:
+            return {"status": "ERROR", "message": str(e)}
+
+# ==========================================
+# LIVE MARKET ENGINE (09:15 AM - 03:30 PM DROPDOWN WINDOW)
+# ==========================================
+def process_live_market_tick(
+    df, mode, lot_size, t1_pts, sl_pts, pcr_val, sector_breadth,
+    strike_mode, allow_multiple, max_open_trades,
+    trade_start_t, trade_end_t, square_off_t,
+    client_id, access_token, tg_token, tg_chat_id
+):
+    now_ist = get_ist_now()
+    if not is_valid_market_time(now_ist, trade_start_t, trade_end_t):
+        return (
+            f"Outside Trading Window ({format_time_12h(trade_start_t)} - {format_time_12h(trade_end_t)} IST). "
+            f"No live/paper orders allowed."
+        )
+
+    df = compute_indicators(df)
+    if len(df) < 3:
+        return "Not enough 5-min candles yet to calculate HMA."
+
+    latest_idx = len(df) - 1
+    prev_idx = len(df) - 2
+    candle_time_str = str(df.loc[latest_idx, "Time"])
+    current_spot = float(df.loc[latest_idx, "Close"])
+    current_high = float(df.loc[latest_idx, "High"])
+    current_low = float(df.loc[latest_idx, "Low"])
+
+    status_notes = []
+
+    # 1. Manage All Active Open Positions (T1, SL, or Custom Square-Off Time)
+    remaining_positions = []
+    for pos in st.session_state.active_positions:
+        entry_spot = pos["Entry_Spot"]
+        sig = pos["Signal"]
+        fav_move = (current_high - entry_spot) if sig == "BUY_CE" else (entry_spot - current_low)
+        adv_move = (current_low - entry_spot) if sig == "BUY_CE" else (entry_spot - current_high)
+
+        exit_reason = None
+        pts = 0.0
+
+        if now_ist.time() >= square_off_t:
+            raw_move = (current_spot - entry_spot) if sig == "BUY_CE" else (entry_spot - current_spot)
+            pts = round(raw_move * 0.5, 2)
+            exit_reason = f"TIME EXIT ({format_time_12h(square_off_t)})"
+        elif fav_move * 0.5 >= t1_pts:
+            pts = float(t1_pts)
+            exit_reason = "WIN (T1)"
+        elif adv_move * 0.5 <= -sl_pts:
+            pts = float(-sl_pts)
+            exit_reason = "LOSS (SL)"
+
+        if exit_reason:
+            pnl_inr = int(round(pts * lot_size))
+            trade_record = {
+                "Time": pos["Entry_Time"],
+                "Exit_Time": now_ist.strftime("%Y-%m-%d %I:%M %p"),
+                "Mode": mode,
+                "Signal": sig,
+                "Strike": pos["Strike"],
+                "Spot": round(entry_spot, 2),
+                "Exit_Spot": round(current_spot, 2),
+                "Result": exit_reason,
+                "Points": pts,
+                "PnL (INR)": pnl_inr
+            }
+            st.session_state.completed_trades.append(trade_record)
+            execute_order(mode, client_id, access_token, "0", "SELL", lot_size, trade_record, tg_token, tg_chat_id)
+            status_notes.append(f"Closed {pos['Strike']} ({exit_reason}) | PnL: 鈧箋pnl_inr}")
+        else:
+            remaining_positions.append(pos)
+
+    st.session_state.active_positions = remaining_positions
+
+    # 2. Check User-Defined Concurrent Trade Permission
+    open_count = len(st.session_state.active_positions)
+    can_open_new = (open_count == 0) if not allow_multiple else (open_count < max_open_trades)
+
+    # 3. Evaluate New Signal on Current Candle (Only before square-off time)
+    if st.session_state.last_signal_candle != candle_time_str and now_ist.time() < square_off_t:
+        prev_fast = df.loc[prev_idx, "HMA_Fast"]
+        prev_slow = df.loc[prev_idx, "HMA_Slow"]
+        curr_fast = df.loc[latest_idx, "HMA_Fast"]
+        curr_slow = df.loc[latest_idx, "HMA_Slow"]
+
+        if not (pd.isna(prev_fast) or pd.isna(prev_slow) or pd.isna(curr_fast) or pd.isna(curr_slow)):
+            signal = None
+            if prev_fast <= prev_slow and curr_fast > curr_slow and pcr_val >= 0.85 and sector_breadth >= -0.2:
+                signal = "BUY_CE"
+            elif prev_fast >= prev_slow and curr_fast < curr_slow and pcr_val <= 1.15 and sector_breadth <= 0.2:
+                signal = "BUY_PE"
+
+            if signal:
+                st.session_state.last_signal_candle = candle_time_str
+                if can_open_new:
+                    strike_label = get_option_strike(current_spot, signal, strike_mode=strike_mode)
+                    sig_info = {
+                        "Entry_Time": now_ist.strftime("%Y-%m-%d %I:%M %p"),
+                        "Signal": signal,
+                        "Strike": strike_label,
+                        "Spot": round(current_spot, 2),
+                        "Entry_Spot": current_spot
+                    }
+                    st.session_state.active_positions.append(sig_info)
+                    execute_order(mode, client_id, access_token, "0", "BUY", lot_size, sig_info, tg_token, tg_chat_id)
+                    status_notes.append(f"New {mode} Entry: {signal} ({strike_label}) @ Spot {current_spot:.2f}")
+                else:
+                    status_notes.append(
+                        f"Signal {signal} Skipped: Already {open_count} trade(s) active."
+                    )
+
+    if status_notes:
+        return " | ".join(status_notes)
+
+    return (
+        f"Monitoring Live @ {now_ist.strftime('%I:%M:%S %p')} IST | Spot: {current_spot:.2f} | "
+        f"Open Trades: {len(st.session_state.active_positions)}"
+    )
+
+# ==========================================
+# HISTORICAL BACKTEST ENGINE (09:15 AM - 03:30 PM DROPDOWN WINDOW)
+# ==========================================
+def run_historical_backtest(
+    df, lot_size=75, t1_pts=30, sl_pts=20, pcr_val=1.0,
+    sector_breadth=0.0, strike_mode="ATM", allow_multiple=False, max_open_trades=3,
+    trade_start_t=time(9, 15), trade_end_t=time(15, 30), square_off_t=time(15, 20)
+):
     df = compute_indicators(df)
     trades = []
-    for i, row in df[df["SIGNAL"] != "NONE"].iterrows():
-        win = np.random.rand() > 0.38
-        pts = t1_points if win else -sl_points
-        pnl = pts * lot_size * num_lots
-        strike = get_strike(row["Close"], row["SIGNAL"], strike_mode)
-        opt_type = "CE" if row["SIGNAL"] == "BUY_CE" else "PE"
-        trades.append({
-            "Time": row["Datetime"].strftime("%Y-%m-%d %H:%M"),
-            "Signal": row["SIGNAL"],
-            "Strike": f"{strike} {opt_type}",
-            "Spot": round(row["Close"], 2),
-            "Result": "WIN (T1)" if win else "LOSS (SL)",
-            "Points": pts,
-            "PnL (INR)": round(pnl, 2)
-        })
-    res_df = pd.DataFrame(trades)
-    res_df.to_csv(f"backtest_{bt_entry_type}_{strike_mode}_{exit_mode}.csv", index=False)
-    return res_df
+    active_until_idx = []
+
+    for i in range(1, len(df)):
+        row_time = pd.to_datetime(df.loc[i, "Time"])
+        if not is_valid_market_time(row_time, trade_start_t, trade_end_t):
+            continue
+
+        if row_time.time() >= square_off_t:
+            continue
+
+        active_until_idx = [end_i for end_i in active_until_idx if end_i > i]
+        can_enter = (len(active_until_idx) == 0) if not allow_multiple else (len(active_until_idx) < max_open_trades)
+
+        if not can_enter:
+            continue
+
+        prev_fast = df.loc[i - 1, "HMA_Fast"]
+        prev_slow = df.loc[i - 1, "HMA_Slow"]
+        curr_fast = df.loc[i, "HMA_Fast"]
+        curr_slow = df.loc[i, "HMA_Slow"]
+        spot = df.loc[i, "Close"]
+
+        if pd.isna(prev_fast) or pd.isna(prev_slow) or pd.isna(curr_fast) or pd.isna(curr_slow):
+            continue
+
+        signal = None
+        if prev_fast <= prev_slow and curr_fast > curr_slow and pcr_val >= 0.85 and sector_breadth >= -0.2:
+            signal = "BUY_CE"
+        elif prev_fast >= prev_slow and curr_fast < curr_slow and pcr_val <= 1.15 and sector_breadth <= 0.2:
+            signal = "BUY_PE"
+
+        if signal:
+            strike_label = get_option_strike(spot, signal, strike_mode=strike_mode)
+            outcome = "OPEN"
+            pts = 0
+            exit_idx = len(df) - 1
+
+            for j in range(i + 1, len(df)):
+                future_time = pd.to_datetime(df.loc[j, "Time"])
+                if future_time.date() != row_time.date() or future_time.time() >= square_off_t:
+                    move = (df.loc[j - 1, "Close"] - spot) if signal == "BUY_CE" else (spot - df.loc[j - 1, "Close"])
+                    pts = round(move * 0.5, 2)
+                    outcome = f"TIME EXIT ({format_time_12h(square_off_t)})"
+                    exit_idx = j
+                    break
+
+                high_diff = (df.loc[j, "High"] - spot) if signal == "BUY_CE" else (spot - df.loc[j, "Low"])
+                low_diff = (df.loc[j, "Low"] - spot) if signal == "BUY_CE" else (spot - df.loc[j, "High"])
+
+                if high_diff * 0.5 >= t1_pts:
+                    outcome = "WIN (T1)"
+                    pts = t1_pts
+                    exit_idx = j
+                    break
+                elif low_diff * 0.5 <= -sl_pts:
+                    outcome = "LOSS (SL)"
+                    pts = -sl_pts
+                    exit_idx = j
+                    break
+
+            active_until_idx.append(exit_idx)
+            pnl_inr = int(round(pts * lot_size))
+            trades.append({
+                "Time": row_time.strftime("%Y-%m-%d %I:%M %p"),
+                "Signal": signal,
+                "Strike": strike_label,
+                "Spot": round(spot, 2),
+                "Result": outcome,
+                "Points": pts,
+                "PnL (INR)": pnl_inr
+            })
+
+    return pd.DataFrame(trades)
 
 # ==========================================
-# 7. MAIN DASHBOARD EXECUTION & CONTROLS
+# STREAMLIT SIDEBAR & UI CONTROLS
 # ==========================================
-if not client_id or not access_token:
-    st.warning("Kripya left sidebar mein apna asli Dhan Client ID aur Broker Access Token enter karein.")
-    st.info("Token dalne ke baad neeche diye gaye buttons se LIVE Engine, Backtest, ya Real Trade Report chalu karein.")
-else:
-    connector = BrokerConnector(broker, client_id, access_token)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    btn_scan = col1.button("Run Single 5m Scan", use_container_width=True)
-    btn_auto = col2.button("Start Auto-Live Loop", use_container_width=True)
-    btn_bt = col3.button("Run Historical Backtest", use_container_width=True)
-    btn_rep = col4.button("Show Real Trades Report", use_container_width=True)
+with st.sidebar:
+    st.header("1. Execution Mode")
+    execution_mode = st.radio(
+        "Select Trading Mode",
+        ["Live Paper Trading", "Live Real Trading", "Historical Backtest (CSV)"],
+        index=0
+    )
 
-    if not connector.connected:
-        st.error(f"[ERROR] Broker Connection Error: {connector.error_msg}")
+    st.header("2. Market Time Window (Strictly 09:15 AM - 03:30 PM)")
+    # Dropdowns strictly bounded between 09:15 AM and 03:30 PM in 5-min steps
+    trade_start_time = st.selectbox(
+        "Entry Start Time (09:15 AM - 03:30 PM)",
+        options=MARKET_SLOTS[:-1],
+        index=0,  # Default: 09:15 AM
+        format_func=format_time_12h
+    )
+    valid_end_slots = [t for t in MARKET_SLOTS if t > trade_start_time]
+    trade_end_time = st.selectbox(
+        "Market Session End Time (Up to 03:30 PM)",
+        options=valid_end_slots,
+        index=len(valid_end_slots) - 1,  # Default: 03:30 PM
+        format_func=format_time_12h
+    )
+    valid_sq_slots = [t for t in MARKET_SLOTS if trade_start_time < t <= trade_end_time]
+    default_sq_idx = valid_sq_slots.index(time(15, 20)) if time(15, 20) in valid_sq_slots else len(valid_sq_slots) - 1
+    auto_sq_off_time = st.selectbox(
+        "Auto Square-Off Time (Inside Window)",
+        options=valid_sq_slots,
+        index=default_sq_idx,  # Default: 03:20 PM
+        format_func=format_time_12h
+    )
+
+    st.header("3. Broker & Telegram Credentials")
+    dhan_client_id = st.text_input("Dhan Client ID", value=st.secrets.get("DHAN_CLIENT_ID", ""))
+    dhan_access_token = st.text_input("Daily Dhan Access Token", type="password")
+    tg_token = st.text_input("Telegram Bot Token", value=st.secrets.get("TELEGRAM_TOKEN", ""), type="password")
+    tg_chat_id = st.text_input("Telegram Chat ID", value=st.secrets.get("TELEGRAM_CHAT_ID", ""))
+
+    st.header("4. Strategy & Concurrent Trade Control")
+    allow_multiple_trades = st.checkbox(
+        "Allow Multiple Concurrent Trades? (1 trade chalte hue dusra le ya nahi)",
+        value=False
+    )
+    max_concurrent = st.number_input(
+        "Max Concurrent Open Trades (If Allowed)",
+        min_value=1, max_value=10, value=2,
+        disabled=not allow_multiple_trades
+    )
+    strike_choice = st.selectbox("Strike Selection", ["ATM", "ITM-1"])
+    lot_qty = st.number_input("Quantity (1 Lot = 75)", min_value=75, step=75, value=75)
+    t1_target = st.number_input("Target 1 (Points)", min_value=5, value=30)
+    sl_points = st.number_input("Stop Loss (Points)", min_value=5, value=20)
+
+    st.header("5. OI & Sector Breadth Filters")
+    vol_pcr = st.number_input("Live Volume PCR", value=1.02, step=0.05)
+    sec_breadth = st.number_input("Sector Breadth Score (-1 to +1)", value=0.25, step=0.05)
+
+now_ist = get_ist_now()
+market_open = is_valid_market_time(now_ist, trade_start_time, trade_end_time)
+window_str = f"{format_time_12h(trade_start_time)} - {format_time_12h(trade_end_time)} IST"
+status_label = f"ACTIVE ({window_str})" if market_open else f"BLOCKED (Outside {window_str})"
+trade_rule_label = f"Multi-Trade (Max {max_concurrent})" if allow_multiple_trades else "Single Trade Only"
+
+st.info(
+    f"IST Time: **{now_ist.strftime('%Y-%m-%d %I:%M:%S %p')}** | Window: **{status_label}** | "
+    f"Sq-Off: **{format_time_12h(auto_sq_off_time)}** | Rule: **{trade_rule_label}**"
+)
+
+# ==========================================
+# MODE 1 & 2: LIVE PAPER TRADING / LIVE REAL TRADING
+# ==========================================
+if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
+    st.subheader(f"{execution_mode} Dashboard ({window_str})")
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        auto_refresh = st.checkbox("Auto-Refresh Live Market Feed (Every 15 Seconds)", value=False)
+    with col_b:
+        if st.button("Reset Active & Completed Trades"):
+            st.session_state.completed_trades = []
+            st.session_state.active_positions = []
+            st.session_state.last_signal_candle = None
+            st.success("Session reset.")
+
+    if not dhan_client_id or not dhan_access_token:
+        st.warning("Enter Dhan Client ID and Daily Access Token in the sidebar to fetch live 5-min NIFTY data.")
     else:
-        st.success(f"Connected to {broker} (Client ID: {client_id}) | Mode: {run_mode} | Strike: {strike_mode} | Exit: {exit_mode}")
-        funds = connector.get_funds()
-        if "error" not in funds and isinstance(funds, dict):
-            avail = funds.get("data", {}).get("availabelBalance", "N/A")
-            st.caption(f"Available Margin Balance: â‚¹{avail}")
+        live_df, err = fetch_live_nifty_5min(dhan_client_id, dhan_access_token)
+        if err:
+            st.error(f"Data Fetch Error: {err}")
+        elif live_df is not None:
+            status_msg = process_live_market_tick(
+                live_df, execution_mode, lot_qty, t1_target, sl_points,
+                vol_pcr, sec_breadth, strike_choice,
+                allow_multiple_trades, max_concurrent,
+                trade_start_time, trade_end_time, auto_sq_off_time,
+                dhan_client_id, dhan_access_token, tg_token, tg_chat_id
+            )
+            st.success(status_msg)
 
-    if btn_scan:
-        st.subheader("Live 5m Market Scan & 12-Table Signal Matrix")
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        scan_data = pd.DataFrame([
-            {"Gate": "G0: Session & Risk", "Status": "PASS", "Details": f"{session_start} - {session_end} | Lots: {num_lots}"},
-            {"Gate": "G1/G2: HMA Fast/Slow", "Status": "ACTIVE", "Details": f"HMA({hma_fast}) vs HMA({hma_slow})"},
-            {"Gate": "G3/G4: Option OI & PCR", "Status": "PASS" if use_oi_filter else "BYPASSED", "Details": f"PCR Range: {pcr_bear_max} - {pcr_bull_min}"},
-            {"Gate": "G5: Final Blue Arrow", "Status": "READY", "Details": f"SL: {sl_points} pts | T1: {t1_points} pts | T2: {t2_points} pts"},
-            {"Gate": "G7: Daily 20MA Gate", "Status": "PASS" if use_daily_20ma else "BYPASSED", "Details": f"MA Length: {daily_ma_len}"},
-            {"Gate": "G8: Trailing & Chop", "Status": "ACTIVE" if enable_trailing else "OFF", "Details": f"Trail Step: {trail_step} pts"}
-        ])
-        st.table(scan_data)
-        st.info(f"Last scanned at {now_str}. Auto Live Order is {'ON' if auto_live_order else 'OFF'}.")
+            if st.session_state.active_positions:
+                st.subheader(f"Active Open Positions ({len(st.session_state.active_positions)})")
+                st.dataframe(pd.DataFrame(st.session_state.active_positions), use_container_width=True)
 
-    if btn_auto:
-        st.warning("Auto-Live Loop triggered! Keep this tab open during market hours (09:20 - 15:15) to auto-scan every 5 minutes.")
+            if st.session_state.completed_trades:
+                pt_df = pd.DataFrame(st.session_state.completed_trades)
+                st.subheader(f"{execution_mode} Completed Trades Log")
+                st.dataframe(pt_df, use_container_width=True)
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Total Trades", len(pt_df))
+                m2.metric("Win Rate", f"{(pt_df['Points'] > 0).mean()*100:.1f}%")
+                m3.metric("Total PnL (INR)", f"鈧箋pt_df['PnL (INR)'].sum():,}")
+                st.download_button(
+                    "Download Live/Paper Trade Log CSV",
+                    pt_df.to_csv(index=False).encode("utf-8"),
+                    "nifty_live_paper_trades.csv",
+                    "text/csv"
+                )
 
-    if btn_bt:
-        st.subheader(f"Historical Backtest Report ({backtest_days} Days | {strike_mode} | {exit_mode})")
-        with st.spinner("Running backtest simulation..."):
-            bt_df = run_historical_backtest(backtest_days)
-            if not bt_df.empty:
-                total_trades = len(bt_df)
-                wins = len(bt_df[bt_df["Points"] > 0])
-                win_rate = round((wins / total_trades) * 100, 2)
-                net_pnl = round(bt_df["PnL (INR)"].sum(), 2)
-                
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Total Trades", total_trades)
-                m2.metric("Win Rate", f"{win_rate}%")
-                m3.metric("Wins / Losses", f"{wins} / {total_trades - wins}")
-                m4.metric("Net PnL (INR)", f"â‚¹{net_pnl}")
-                
-                st.dataframe(bt_df, use_container_width=True)
-            else:
-                st.info("No signals generated in the selected period.")
+    if auto_refresh:
+        time_module.sleep(15)
+        st.rerun()
 
-    if btn_rep:
-        st.subheader("Real Live Trades Journal")
-        if os.path.exists(JOURNAL_FILE):
-            rep_df = pd.read_csv(JOURNAL_FILE)
-            st.dataframe(rep_df, use_container_width=True)
-        else:
-            st.info("Abhi tak koi real live trade execute nahi hua hai (`live_real_trades_journal.csv` empty hai).")
+# ==========================================
+# MODE 3: HISTORICAL BACKTEST (CSV)
+# ==========================================
+else:
+    st.subheader(f"Historical CSV Backtester ({window_str} Filtered)")
+    uploaded_ohlc = st.file_uploader("Upload 5-Min NIFTY OHLC CSV (Columns: Time, Open, High, Low, Close)", type=["csv"])
+    if uploaded_ohlc is not None:
+        raw_df = pd.read_csv(uploaded_ohlc)
+        results_df = run_historical_backtest(
+            raw_df, lot_size=lot_qty, t1_pts=t1_target, sl_pts=sl_points,
+            pcr_val=vol_pcr, sector_breadth=sec_breadth, strike_mode=strike_choice,
+            allow_multiple=allow_multiple_trades, max_open_trades=max_concurrent,
+            trade_start_t=trade_start_time, trade_end_t=trade_end_time, square_off_t=auto_sq_off_time
+        )
+        st.dataframe(results_df, use_container_width=True)
+        if not results_df.empty:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Trades", len(results_df))
+            c2.metric("Win Rate", f"{(results_df['Points'] > 0).mean()*100:.1f}%")
+            c3.metric("Net PnL (INR)", f"鈧箋results_df['PnL (INR)'].sum():,}")
+            st.download_button(
+                "Download Clean Backtest CSV",
+                results_df.to_csv().encode("utf-8"),
+                "nifty_clean_backtest.csv",
+                "text/csv"
+            )
+
+\end{lstlisting}
+
+\end{document}
