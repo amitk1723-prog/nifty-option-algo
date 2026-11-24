@@ -2,8 +2,7 @@
 """
 nifty_option_pro_v28_FULL.py
 ============================
-100% Full Intact Version: Saare controls, Final Buy rules, Daily 20MA (7d/5d),
-Breadth, Sectors aur Market Hours Override ke saath.
+100% Full Intact Version + Market Hours Override Toggle + All Original Controls.
 """
 import os
 import time
@@ -38,7 +37,6 @@ CONFIG = {
 }
 
 PARAMS = {
-    # --- STRIKE & EXPIRY SELECTION ---
     "strikeMode": "ATM",
     "expiryMode": "CURRENT_WEEK",
     "manualExpiry": "",
@@ -79,7 +77,6 @@ PARAMS = {
     "peBelowOpen": True,
     "optSym": "",
     "optEntry": 0.0,
-    # --- FINAL BUY (BLUE ARROW) RULES ---
     "wfOn": True,
     "wfMin": 1,
     "wfRule": "E",
@@ -92,7 +89,6 @@ PARAMS = {
     "wfUp": 0.5,
     "wfUpPts": 0.0,
     "wfWick": True,
-    # --- DAILY 20MA DIRECTION GATE (7d / 5d) ---
     "dgOn": True,
     "dgMode": "Sirf PE par",
     "peScMin": 3,
@@ -100,7 +96,6 @@ PARAMS = {
     "dgD1": 7,
     "dgD2": 5,
     "dgFlat": 0.05,
-    # --- v22 UPGRADES ---
     "lateOn": False,
     "lateAdx": 40.0,
     "lateBr": 90.0,
@@ -408,7 +403,7 @@ class BrokerConnector:
                 res = self.dhan.historical_daily_data(security_id=sec_id, exchange_segment=seg, instrument_type=itype, from_date=from_dt.strftime("%Y-%m-%d"), to_date=to_dt.strftime("%Y-%m-%d"))
             else:
                 req_int = "1" if interval == "3" else ("60" if interval == "240" else interval)
-                res = self.dhan.intraday_minute_data(security_id=sec_id, exchange_segment=seg, instrument_type=itype, from_date=from_dt.strftime("%Y-%m-%d 09:15:00"), to_date=from_dt.strftime("%Y-%m-%d 15:30:00") if from_dt.date() < to_dt.date() else to_dt.strftime("%Y-%m-%d %H:%M:%S"), interval=int(req_int))
+                res = self.dhan.intraday_minute_data(security_id=sec_id, exchange_segment=seg, instrument_type=itype, from_date=from_dt.strftime("%Y-%m-%d 09:15:00"), to_date=to_dt.strftime("%Y-%m-%d 15:30:00"), interval=int(req_int))
             d = res.get("data", {})
             if not d or "timestamp" not in d or len(d["timestamp"]) == 0: return pd.DataFrame()
             df = pd.DataFrame({
