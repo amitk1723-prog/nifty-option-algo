@@ -1,16 +1,18 @@
-Screenshot mein error saaf dikh raha hai:
-> Broker Connection Error: dhanhq.__init__() takes 2 positional arguments but 3 were given
-> 
-Yeh Error Kyon Aaya?
-Python ki official dhanhq library jab initialize hoti hai, toh woh sirf ek single argument (Access Token) leti hai, ya phir Client ID aur Access Token ko ek alag tareeqe se leti hai. Humne code mein dhanhq(client_id, access_token) pass kiya tha, isliye library ne 3 arguments (self, client_id, access_token) samajh kar error de diya.
-Maine is issue ko 100% permanently fix kar diya hai. Niche aapke liye ekdam clean aur fixed code (app.py) ki file taiyar hai.
-Fix Karna Kya Hai?
-Aap apne GitHub repository (amitk1723-prog/nifty-option-algo) par jayein, app.py file ko kholein, aur uske andar ka saara code hata kar niche diya gaya bilkul naya aur error-free code paste karke Commit changes kar dein:
 # -*- coding: utf-8 -*-
 """
-nifty_option_pro_v28_desktop_app.py
-==================================
-Desktop Web UI Wrapper for NIFTY OPTION SIGNAL PRO v28 (Fixed dhanhq init).
+nifty_option_pro_v28_FULL.py
+============================
+Ek hi file me DONO cheezein:
+  (A) NIFTY OPTION SIGNAL PRO v28 BOT  - Dhan/Upstox live algo, backtest, Final Buy (blue arrow),
+      real-trade journal CSV, Telegram alert, manual exit, strike/expiry/exit selector menu.
+  (B) nifty_dash DASHBOARD            - Pine jaise saare 12 tables (SIGNAL, LOG, BREADTH, OI, STOCKS,
+      SECTOR, SECTOR ALL, JOURNAL, PHASE, EXTRA STATS, GRADE, VOL PCR) + candle chart
+      (BUY/EXIT/FINAL BUY marker, Entry/SL/T1/T2, Reversal, Call/Put Wall) -> dashboard.html
+      (browser me kholo, har 20 sec auto refresh; chart library CDN se aati hai).
+
+Dashboard bot se khud jud gaya hai: har closed 5m bar ke baad dashboard.html update hota hai.
+Backtest ke end me dashboard_backtest_<MODE>.html banta hai.
+Settings:  CONFIG["DASH_ON"], CONFIG["DASH_HTML_PATH"], CONFIG["DASH_CONSOLE_TABLES"]  aur  DASH{} (table positions / show-hide).
 """
 import os
 import time
@@ -28,143 +30,181 @@ from types import SimpleNamespace
 # 1. BROKER, CHART, EXECUTION & TELEGRAM CONFIG (GitHub Secrets + Direct Support)
 # ==============================================================================
 CONFIG = {
-    "BROKER": os.environ.get("BROKER", "DHAN"),
-    "CHART_SYMBOL": os.environ.get("CHART_SYMBOL", "NIFTY_SPOT"),
+    "BROKER": os.environ.get("BROKER", "DHAN"),              # "DHAN" ya "UPSTOX"
+    "CHART_SYMBOL": os.environ.get("CHART_SYMBOL", "NIFTY_SPOT"),  # "NIFTY_SPOT" ya "NIFTY_FUT"
+
+    # Dhan API Credentials (Direct paste karein ya GitHub Secrets se auto-load hoga)
     "DHAN_CLIENT_ID": os.environ.get("DHAN_CLIENT_ID", "YOUR_DHAN_CLIENT_ID"),
     "DHAN_ACCESS_TOKEN": os.environ.get("DHAN_ACCESS_TOKEN", "YOUR_DHAN_ACCESS_TOKEN"),
+
+    # Upstox API Credentials
     "UPSTOX_ACCESS_TOKEN": os.environ.get("UPSTOX_ACCESS_TOKEN", "YOUR_UPSTOX_ACCESS_TOKEN"),
+
+    # Telegram Alerts (Optional)
     "TELEGRAM_BOT_TOKEN": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
     "TELEGRAM_CHAT_ID": os.environ.get("TELEGRAM_CHAT_ID", ""),
-    "RUN_MODE": "LIVE",
-    "BACKTEST_DAYS": 30,
-    "BACKTEST_ENTRY_TYPE": "BOTH",
-    "AUTO_PLACE_ORDER": False,
+
+    # Run Mode & Order Execution
+    "RUN_MODE": "LIVE",            # "LIVE" = Real-time Market Algo | "BACKTEST" = Historical Backtest
+    "BACKTEST_DAYS": 30,           # Backtest kitne din ke historical data par chalana hai
+    "BACKTEST_ENTRY_TYPE": "BOTH", # "ALL_SIGNALS" | "REAL_BLUE_ONLY" | "BOTH"
+    "AUTO_PLACE_ORDER": False,     # True = Blue Arrow par Live Order jayega | False = Sirf Alert/Log
     "PRODUCT_TYPE": "INTRADAY",
-    "INTERACTIVE_MENU": True,
-    "REAL_TRADES_CSV": "live_real_trades_journal.csv",
-    "DASH_ON": True,
-    "DASH_HTML_PATH": "dashboard.html",
-    "DASH_CONSOLE_TABLES": False,
+    "INTERACTIVE_MENU": True,      # True = Run karte hi screen par Option Selection Menu aayega
+    "REAL_TRADES_CSV": "live_real_trades_journal.csv",  # Real Live Trades ka permanent record file
+
+    # Dashboard (nifty_dash)
+    "DASH_ON": True,                       # True = chart + tables dashboard.html banao
+    "DASH_HTML_PATH": "dashboard.html",    # Live dashboard file ka naam
+    "DASH_CONSOLE_TABLES": False,          # True = har bar par saari tables console me bhi print hongi
 }
 
 # ==============================================================================
-# 2. COMPLETE INDICATOR SETTINGS
+# 2. COMPLETE INDICATOR SETTINGS (100% EXACT PINE SCRIPT v28 + VOL PCR)
 # ==============================================================================
 PARAMS = {
-    "strikeMode": "ATM",
-    "expiryMode": "CURRENT_WEEK",
-    "manualExpiry": "",
-    "exitMode": "T1",
-    "t1ExitPct": 50,
-    "useHighLowForTarget": True,
-    "chartType": "Index/Fut",
-    "optStep": 50.0,
-    "optLot": 65,
-    "optDelta": 0.5,
-    "slMult": 1.5,
-    "rrT": 2.0,
-    "capital": 100000.0,
-    "riskPct": 1.0,
-    "needN": 4,
-    "orBars": 3,
-    "sess_start": "09:20",
-    "sess_end": "15:00",
-    "extMult": 3.0,
-    "coolBars": 6,
-    "mtfOn": True,
-    "mtf15Req": False,
-    "mtfNeed": 3,
-    "adxOn": True,
-    "adxLen": 14,
-    "adxMin": 20.0,
-    "diOn": True,
-    "diMtf": True,
-    "diNeed": 2,
-    "adxTrd": 20.0,
-    "diStrong": 20.0,
-    "diWeak": 20.0,
-    "allowCE": True,
-    "allowPE": True,
-    "peBrMax": 100.0,
-    "peAdxMin": 0.0,
-    "peHtf": "1h PE",
-    "peBelowOpen": True,
-    "optSym": "",
-    "optEntry": 0.0,
-    "wfOn": True,
-    "wfMin": 1,
-    "wfRule": "E",
-    "wfA": 0.5,
-    "wfDip": 0.5,
-    "wfWk": 40,
-    "wfF": 3,
-    "wfS": 5,
-    "wfMax": 20,
-    "wfUp": 0.5,
-    "wfUpPts": 0.0,
-    "wfWick": True,
-    "dgOn": True,
-    "dgMode": "Sirf PE par",
-    "peScMin": 3,
-    "dgLen": 20,
-    "dgD1": 7,
-    "dgD2": 5,
-    "dgFlat": 0.05,
-    "lateOn": False,
+    # --- STRIKE & EXPIRY SELECTION OPTIONS ---
+    "strikeMode": "ATM",           # Options: "ATM", "ITM_1", "ITM_2", "OTM_1"
+    "expiryMode": "CURRENT_WEEK",  # Options: "CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"
+    "manualExpiry": "",            # Sirf expiryMode="MANUAL" ke liye (e.g., "2026-11-24")
+
+    # --- TARGET EXIT OPTIONS (Live Algo + Backtest Dono Ke Liye) ---
+    "exitMode": "T1",              # Options: "T1", "T2", "T1_T2", "MANUAL"
+    "t1ExitPct": 50,               # "T1_T2" mode me T1 par kitne % lots book karne hain
+    "useHighLowForTarget": True,   # True = Candle High/Low touch par T1/T2 exit | False = Sirf Candle Close par
+
+    # --- G0: Chart, Market Window & Trade Settings ---
+    "chartType": "Index/Fut",      # "Index/Fut", "CE prem", "PE prem"
+    "optStep": 50.0,               # Strike Step (Nifty 50 = 50, BankNifty = 100)
+    "optLot": 65,                  # Lot Size (NSE/broker se verify karein)
+    "optDelta": 0.5,               # Approx Option Delta (0.1 to 1.0)
+    "slMult": 1.5,                 # SL = ATR(10) x
+    "rrT": 2.0,                    # Target 1 Risk:Reward
+    "capital": 100000.0,           # Capital (Rs)
+    "riskPct": 1.0,                # Risk per trade % of capital
+    "needN": 4,                    # Signal ke liye min conditions (of 5)
+    "orBars": 3,                   # Opening Range bars (3 x 5m = 15 min)
+    "sess_start": "09:20",         # Market Trade Window Start (IST)
+    "sess_end": "15:00",           # Market Trade Window End (IST)
+    "extMult": 3.0,                # Peak chase band: price EMA21 se itne ATR se door ho to skip
+    "coolBars": 6,                 # Exit ke baad itne bar nayi entry nahi (6 x 5m = 30 min)
+
+    # MTF Toggles (3m, 5m, 15m, 1h, 4h)
+    "mtfOn": True,                 # 3m + 5m (+ 15m) agree toggle
+    "mtf15Req": False,             # True = 15m zaroori | False = buy 3m+5m se, 15m bullish/bearish ho to '+'
+    "mtfNeed": 3,                  # Har extra timeframe par min conditions (of 4)
+
+    # Sideways & DI Filter Toggles
+    "adxOn": True,                 # Sideways filter: ADX kam ho to signal band
+    "adxLen": 14,                  # ADX length
+    "adxMin": 20.0,                # ADX itne se kam = sideways (signal band)
+    "diOn": True,                  # DI filter ON: CE me D+ upar aur D- neeche, PE me ulta
+    "diMtf": True,                 # DI filter 3m aur 15m par bhi ON/OFF (False = sirf 5m)
+    "diNeed": 2,                   # 5m / 3m / 15m me se kitne TF pass hone chahiye (1 se 3)
+    "adxTrd": 20.0,                # DI filter: ADX itne se UPAR ho
+    "diStrong": 20.0,              # Signal side DI itne se UPAR ho
+    "diWeak": 20.0,                # Ulta side DI itne se NEECHE ho
+
+    # Direction & PE Specific Filters
+    "allowCE": True,               # CE signal ON/OFF (Long)
+    "allowPE": True,               # PE signal ON/OFF (Short)
+    "peBrMax": 100.0,              # PE sirf tab jab Breadth Score <= itna (100 = OFF)
+    "peAdxMin": 0.0,               # PE ke liye alag min ADX (0 = OFF)
+    "peHtf": "1h PE",              # "OFF", "1h PE", "1h + 4h PE"
+    "peBelowOpen": True,           # PE sirf tab jab price aaj ke open ke neeche ho
+    "optSym": "",                  # Specific Option Symbol - khali = Auto Strike/Expiry
+    "optEntry": 0.0,               # Option manual entry premium (0 = auto)
+
+    # --- G5: Final Buy (Green/Red Arrow -> Calculation -> Blue Arrow) ---
+    "wfOn": True,                  # Final Buy arrow & 2-step confirmation ON/OFF
+    "wfMin": 1,                    # Final Buy signal candle ke kam se kam itne candle baad hi
+    "wfRule": "E",                 # "A" (Dip+ATR), "B" (Sig Close), "C" (Dip+Wick), "D" (MA Cross), "E" (Simple Dip+Rev)
+    "wfA": 0.5,                    # A rule: dip low se itne ATR(10) upar close ho
+    "wfDip": 0.5,                  # C rule: signal close se min dip (ATR x)
+    "wfWk": 40,                    # C rule: reversal candle wick %
+    "wfF": 3,                      # D rule: Fast MA length
+    "wfS": 5,                      # D rule: Slow MA length
+    "wfMax": 20,                   # Max candles wait for Final Buy (uske baad cancel)
+    "wfUp": 0.5,                   # Dip nahi aaya to signal close se ATR x upar/neeche breakout (0 = OFF)
+    "wfUpPts": 0.0,                # Fixed points breakout (0 = ATR setting use hogi)
+    "wfWick": True,                # True = Dip original SL ki wick touch kare to bhi cancel | False = sirf close
+
+    # --- G7: Daily 20MA Direction Gate (7 din / 5 din) ---
+    "dgOn": True,                  # Daily 20MA gate ON/OFF
+    "dgMode": "Sirf PE par",       # "Dono (CE + PE)", "Sirf PE par", "Sirf CE par"
+    "peScMin": 3,                  # PE direction score: 5 shart me se min kitni pass hon (0 = OFF, 0 to 5)
+    "dgLen": 20,                   # Daily Moving Average length
+    "dgD1": 7,                     # Pehla check: kitne daily candle pehle
+    "dgD2": 5,                     # Doosra check: kitne daily candle pehle
+    "dgFlat": 0.05,                # MA ek din me itne % se kam hile = flat
+
+    # --- G8: v22 Upgrades (Sab default False = exact v28 default; True karke ON karein) ---
+    "lateOn": False,               # Late-entry guard: ADX aur Breadth dono bahut high ho to skip
     "lateAdx": 40.0,
     "lateBr": 90.0,
-    "arOn": False,
+    "arOn": False,                 # ADX rising: ADX pichhle arN bar se badh raha ho
     "arN": 3,
-    "rsiOn": False,
+    "rsiOn": False,                # RSI cap: CE me RSI > rsiHi / PE me < rsiLo ho to skip
     "rsiHi": 76.0,
     "rsiLo": 24.0,
-    "cdOn": False,
+    "cdOn": False,                 # Candle strength: CE me close high ke paas, PE me low ke paas
     "cdPos": 0.6,
-    "vfOn": False,
+    "vfOn": False,                 # Volume confirm: volume 20 bar average se kam na ho
     "vfMult": 1.0,
-    "lvlOn": False,
+    "lvlOn": False,                # Level guard: CE PDH ke paas / PE PDL ke paas to skip
     "lvlBuf": 0.15,
-    "rdOn": False,
+    "rdOn": False,                 # Round level guard: 100-pt round level ke paas skip
     "rdStep": 100.0,
     "rdPts": 15.0,
-    "opOn": False,
-    "vxOn": False,
+    "opOn": False,                 # CE sirf tab jab price aaj ke open ke upar ho
+    "vxOn": False,                 # India VIX: CE me VIX badh na raha ho, PE me gir na raha ho
     "vxLook": 12,
-    "tmOn": False,
+    "tmOn": False,                 # Time filter: neeche ke 3 band windows me nayi entry nahi
     "tmS1": ("09:20", "09:35"),
     "tmS2": ("12:00", "13:30"),
     "tmS3": ("14:45", "15:00"),
-    "exOn": False,
-    "exDay": "Tuesday",
-    "beOn": False,
+    "exOn": False,                 # Expiry day par nayi entry nahi
+    "exDay": "Tuesday",            # "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
+    "beOn": False,                 # Breakeven: price +beR risk chala jaye to SL entry par
     "beR": 1.0,
     "beLock": 0.1,
-    "trOn": False,
-    "gdA": 8,
-    "gdB": 6,
-    "autoOc": True,
-    "ocN": 4,
-    "pcrIn": 0.0,
-    "callWall": 0.0,
-    "putWall": 0.0,
-    "wallBuf": 0.3,
+    "trOn": False,                 # Trail: T1 par exit nahi, SL +1R par lock, exit T2 par
+    "gdA": 8,                      # Grade A: 9 me se min pass
+    "gdB": 6,                      # Grade B: 9 me se min pass
+
+    # --- G3, G4, G9: OPTION OI + OPTION VOLUME PCR + FUTURES OI (STRIKE RANGE 2..9) ---
+    "autoOc": True,                # Option Chain OI Auto ON/OFF (Dhan/Upstox API se asli OI)
+    "ocN": 4,                      # Option OI ke liye ATM +- N strikes (Options: 2,3,4,5,6,7,8,9)
+    "pcrIn": 0.0,                  # Manual OI PCR (0 = OFF)
+    "callWall": 0.0,               # Manual Call Wall (0 = OFF)
+    "putWall": 0.0,                # Manual Put Wall (0 = OFF)
+    "wallBuf": 0.3,                # Wall ke itne % paas aane par us side ka trade skip
     "pcrBull": 1.1,
     "pcrBear": 0.9,
-    "ovOn": True,
-    "ovN": 5,
+
+    "ovOn": True,                  # VOL PCR indicator ON/OFF
+    "ovN": 5,                      # Option Volume ke liye ATM +- N strikes (Options: 2,3,4,5,6,7,8,9)
     "ovBull": 1.2,
     "ovBear": 0.8,
-    "ovFeed": True,
-    "futOiOn": True,
-    "oiLook": 12,
-    "oiProbFilterOn": True,
-    "minOiProbCE": 55.0,
-    "minOiProbPE": 55.0,
-    "requireHighProbOnly": False,
-    "preSec": 15,
+    "ovFeed": True,                # True = VOL PCR aur Volume Wall ko trade probability & filter me lagao
+
+    "futOiOn": True,               # Futures OI analysis ON/OFF
+    "oiLook": 12,                  # Futures OI / price change kitne bar peeche se
+
+    "oiProbFilterOn": True,        # True = Min Combined OI+Volume Probability % pass hone par hi entry
+    "minOiProbCE": 55.0,           # CE Buy ke liye minimum OI+Vol Bullish Probability %
+    "minOiProbPE": 55.0,           # PE Buy ke liye minimum OI+Vol Bearish Probability %
+    "requireHighProbOnly": False,  # True = Sirf 'HIGH PROB' signals pe trade | False = HIGH PROB + medium
+
+    # --- G1: Pre-Alert & Display ---
+    "preSec": 15,                  # Pre-alert: candle close se itne second pehle warning alert (0 = band)
+
+    # --- G2: Breadth (20 Heavyweight Stocks) ---
     "flatPct": 0.02,
     "implRef": 0.5,
     "hiTh": 65.0,
+
+    # --- GSC: v28 Sector Strength ---
     "scOn": True,
     "scTh": 0.25,
     "scFeed": False,
@@ -172,22 +212,29 @@ PARAMS = {
     "scBankOk": True,
 }
 
+
+# ==============================================================================
+# 2B. DASHBOARD DISPLAY SETTINGS (nifty_dash tables / chart ki position aur show-hide)
+# ==============================================================================
 _dd = dt.date.today()
 DASH = {
-    "textSz": "tiny",
-    "showDetail": True,
-    "showMk": True,
-    "lblMode": "ON",
+    "textSz": "tiny",              # "tiny", "small", "normal" (table font)
+    "showDetail": True,            # True = SIGNAL table ki saari detail rows (Bull/Bear, EMA, VWAP, RSI, ADX ...)
+    "showMk": True,                # Chart par BUY/EXIT markers
+    "lblMode": "ON",               # "ON" = marker par poora text | "OFF" = sirf BUY CE / BUY PE / EXIT
     "lblBars": 0,
-    "wfArrow": True,
-    "wfMaShow": False,
+    "wfArrow": True,               # Chart par FINAL BUY (blue) arrow
+    "wfMaShow": False,             # Final Buy rule D ki fast/slow MA line chart par
+    # Table positions: Top Left/Center/Right, Middle Left/Right, Bottom Left/Center/Right
     "posSig": "Top Right", "posLg": "Bottom Right", "posBr": "Top Left", "posOi": "Middle Left",
     "posLs": "Bottom Left", "scPos": "Top Center", "scPosA": "Middle Right", "posJ": "Bottom Center",
     "posPh": "Bottom Center", "posXs": "Middle Right", "gdPos": "Top Center", "vp_pos": "Middle Left",
+    # Table show/hide
     "showLog": True, "showList": True, "scAll": True, "jShow": True, "phShow": True,
     "xsShow": True, "gdShow": True, "vp_showTbl": True,
-    "jPg": 1,
-    "vp_useSpot": True,
+    "jPg": 1,                      # Journal page number
+    "vp_useSpot": True,            # VOL PCR table me spot/chart source dikhane ke liye
+    # Phase-wise stats ke dates (entry date se): P1 = ph1S..ph2S, P2 = ph2S..phE
     "ph1S": (_dd - dt.timedelta(days=60)).isoformat(),
     "ph2S": (_dd - dt.timedelta(days=30)).isoformat(),
     "phE": _dd.isoformat(),
@@ -207,6 +254,162 @@ def get_trade_strike(spot_price: float, side: str) -> float:
     elif mode == "OTM_1":
         return (atm + step) if side == "CE" else (atm - step)
     return atm
+
+def show_real_trade_report(connector=None):
+    """
+    Algo ne ab tak kitne REAL LIVE TRADES liye hain (Local CSV + Broker Order/Trade Book),
+    un sabhi ka poora hisab aur P&L report dikhata hai.
+    """
+    print("\n" + "=" * 82)
+    print("   ALGO REAL TRADE REPORT (KITNE REAL TRADE LIYE GAYE HAIN)")
+    print("=" * 82)
+
+    csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
+    if os.path.exists(csv_file):
+        df_local = pd.read_csv(csv_file)
+        if not df_local.empty:
+            total_real = len(df_local)
+            executed_orders = len(df_local[df_local["OrderPlaced"] == True]) if "OrderPlaced" in df_local.columns else total_real
+            closed_df = df_local[df_local["Status"] == "CLOSED"] if "Status" in df_local.columns else df_local
+            open_df = df_local[df_local["Status"] == "OPEN"] if "Status" in df_local.columns else pd.DataFrame()
+            wins = len(closed_df[closed_df["PnL_Pts"] > 0]) if "PnL_Pts" in closed_df.columns else 0
+            losses = len(closed_df[closed_df["PnL_Pts"] <= 0]) if "PnL_Pts" in closed_df.columns else 0
+            net_pts = closed_df["PnL_Pts"].sum() if "PnL_Pts" in closed_df.columns else 0.0
+
+            print(f"[A] ALGO JOURNAL RECORD ({csv_file}):")
+            print(f"    Total Blue Arrow Real Trades : {total_real} (Broker Live Orders Sent: {executed_orders})")
+            print(f"    Open Trades: {len(open_df)} | Closed Trades: {len(closed_df)} (Win: {wins} / Loss: {losses}) | Net P&L: {net_pts:+.2f} pts")
+            print("-" * 82)
+            print(df_local.to_string(index=False))
+        else:
+            print(f"[A] ALGO JOURNAL RECORD: Abhi tak 0 real trades record hue hain.")
+    else:
+        print(f"[A] ALGO JOURNAL RECORD: Abhi tak koi real trade file nahi bani hai (0 Real Trades).")
+
+    if connector is not None:
+        print("\n" + "-" * 82)
+        print(f"[B] BROKER ({connector.broker}) AAJ KI LIVE ORDER & POSITION BOOK:")
+        try:
+            broker_summary = connector.get_broker_live_trade_summary()
+            print(broker_summary)
+        except Exception as e:
+            print(f"    Broker book fetch info: {e}")
+    print("=" * 82 + "\n")
+
+
+def interactive_option_selector(connector=None):
+    if not CONFIG.get("INTERACTIVE_MENU", True) or os.environ.get("GITHUB_ACTIONS") == "true":
+        return
+
+    print("\n" + "=" * 68)
+    print("   NIFTY OPTION SIGNAL PRO v28 - OPTION & BACKTEST SELECTOR")
+    print("=" * 68)
+
+    # 1. Mode Selection (LIVE vs BACKTEST vs REAL TRADE REPORT)
+    print("\n[1] Mode Chunein:")
+    print("    1 = LIVE Trading / Alerts (Default)")
+    print("    2 = BACKTEST (Historical Check - Bina Live Trade Liye Bhi Chalega)")
+    print("    3 = REAL TRADE REPORT (Algo Ne Ab Tak Kitne Real Trade Liye Uska Hisab Dekhein)")
+    m_in = input("    Option number dalein (Enter = 1): ").strip()
+
+    if m_in == "3":
+        show_real_trade_report(connector)
+        cont = input("Kya ab LIVE ya BACKTEST chalana hai? (1 = LIVE, 2 = BACKTEST, Enter = Exit): ").strip()
+        if cont not in ("1", "2"):
+            raise SystemExit(0)
+        m_in = cont
+
+    if m_in == "2":
+        CONFIG["RUN_MODE"] = "BACKTEST"
+        d_in = input(f"    Kitne din ka Backtest chahiye? (Enter = {CONFIG['BACKTEST_DAYS']}): ").strip()
+        if d_in.isdigit() and int(d_in) > 0:
+            CONFIG["BACKTEST_DAYS"] = int(d_in)
+
+        print("\n[1B] Backtest Type Chunein (Same Data Par):")
+        print("    1 = BOTH (Initial Signals + Real Blue Arrow Final Buy Dono Ka Comparison)")
+        print("    2 = REAL_BLUE_ONLY (Sirf Real Trade - Blue Arrow Final Buy Confirm Hone Par Entry)")
+        print("    3 = ALL_SIGNALS (Har Initial Green/Red Arrow Signal Par Entry)")
+        bt_in = input("    Option number dalein (Enter = 1 BOTH): ").strip()
+        bt_map = {"1": "BOTH", "2": "REAL_BLUE_ONLY", "3": "ALL_SIGNALS"}
+        if bt_in in bt_map:
+            CONFIG["BACKTEST_ENTRY_TYPE"] = bt_map[bt_in]
+    else:
+        CONFIG["RUN_MODE"] = "LIVE"
+
+    # 2. Strike Selection (ATM vs ITM_1 vs ITM_2 vs OTM_1)
+    print("\n[2] Strike Selection (Kaun sa Option Buy Karna Hai):")
+    print("    1 = ATM (Round Figure ATM - e.g. 25500 CE/PE)")
+    print("    2 = ITM 1 (In-The-Money 1 Step - e.g. CE: 25450 / PE: 25550)")
+    print("    3 = ITM 2 (In-The-Money 2 Step - e.g. CE: 25400 / PE: 25600)")
+    print("    4 = OTM 1 (Out-Of-The-Money 1 Step - e.g. CE: 25550 / PE: 25450)")
+    s_in = input("    Option number dalein (Enter = 1 ATM): ").strip()
+    strike_map = {"1": "ATM", "2": "ITM_1", "3": "ITM_2", "4": "OTM_1"}
+    if s_in in strike_map:
+        PARAMS["strikeMode"] = strike_map[s_in]
+
+    # 3. Expiry Selection
+    print("\n[3] Expiry Selection:")
+    avail_exps = []
+    if connector is not None:
+        try:
+            avail_exps = connector.get_all_upcoming_expiries()
+        except Exception:
+            avail_exps = []
+
+    if avail_exps:
+        print(f"    Broker Upcoming Expiries: {', '.join(avail_exps[:5])}")
+    print("    1 = CURRENT_WEEK (Is Hafte Ki Nearest Expiry)")
+    print("    2 = NEXT_WEEK    (Agle Hafte Ki Weekly Expiry)")
+    print("    3 = MONTHLY      (Is Mahine Ki Monthly Expiry)")
+    print("    4 = MANUAL       (Khud Date Dalein YYYY-MM-DD)")
+    e_in = input("    Option number dalein (Enter = 1 CURRENT_WEEK): ").strip()
+    exp_map = {"1": "CURRENT_WEEK", "2": "NEXT_WEEK", "3": "MONTHLY", "4": "MANUAL"}
+    if e_in in exp_map:
+        PARAMS["expiryMode"] = exp_map[e_in]
+        if PARAMS["expiryMode"] == "MANUAL":
+            dt_in = input("    Expiry Date likhein (e.g. 2026-11-24): ").strip()
+            if dt_in:
+                PARAMS["manualExpiry"] = dt_in
+
+    # 4. Target Exit Selection (T1, T2, T1_T2, MANUAL)
+    print("\n[4] Target Exit Option Chunein:")
+    print("    1 = T1     (Target 1 hit hote hi 100% exit)")
+    print("    2 = T2     (T1 par SL +1R trail, Target 2 par 100% exit)")
+    print("    3 = T1_T2  (50% T1 par book + SL Entry par, baaki 50% T2 par exit)")
+    print("    4 = MANUAL (Auto Target exit OFF - jab chahein tab exit karein)")
+    x_in = input("    Option number dalein (Enter = 1 T1): ").strip()
+    exit_map = {"1": "T1", "2": "T2", "3": "T1_T2", "4": "MANUAL"}
+    if x_in in exit_map:
+        PARAMS["exitMode"] = exit_map[x_in]
+
+    # 5. Option OI & Volume Strike Span (2 to 9)
+    print("\n[5] Option OI & Volume Strike Range (ATM se Upar aur Neeche kitne strike: 2 se 9):")
+    oi_in = input(f"    Option OI Strike Span dalein [2-9] (Enter = {PARAMS['ocN']}): ").strip()
+    if oi_in.isdigit() and 2 <= int(oi_in) <= 9:
+        PARAMS["ocN"] = int(oi_in)
+    vol_in = input(f"    Option Volume PCR Strike Span dalein [2-9] (Enter = {PARAMS['ovN']}): ").strip()
+    if vol_in.isdigit() and 2 <= int(vol_in) <= 9:
+        PARAMS["ovN"] = int(vol_in)
+
+    # 6. Auto Order Confirmation (Only for LIVE mode)
+    if CONFIG["RUN_MODE"] == "LIVE":
+        print("\n[6] Order Execution Mode:")
+        print("    1 = SIRF ALERTS (Safe Mode - Blue Arrow par alert aayega, order nahi lagega)")
+        print("    2 = AUTO LIVE ORDER (Blue Arrow par Broker me real order lag jayega)")
+        o_in = input("    Option number dalein (Enter = 1 Safe Alert Mode): ").strip()
+        CONFIG["AUTO_PLACE_ORDER"] = (o_in == "2")
+
+    # 7. Dashboard (chart + tables)
+    print("\n[7] Dashboard (candle chart + 12 tables -> dashboard.html):")
+    print("    1 = ON (Default)   2 = OFF   3 = ON + tables console me bhi")
+    d_in2 = input("    Option number dalein (Enter = 1 ON): ").strip()
+    CONFIG["DASH_ON"] = (d_in2 != "2")
+    CONFIG["DASH_CONSOLE_TABLES"] = (d_in2 == "3")
+
+    print("\n" + "-" * 68)
+    print(f"SELECTED -> Mode: {CONFIG['RUN_MODE']} ({CONFIG['BACKTEST_ENTRY_TYPE']}) | Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']} | OI: +-{PARAMS['ocN']} | Vol: +-{PARAMS['ovN']}")
+    print("-" * 68 + "\n")
+
 
 BREADTH_STOCKS = [
     ("HDFCBANK", 9.85), ("ICICIBANK", 9.45), ("RELIANCE", 7.83), ("BHARTIARTL", 5.00),
@@ -237,6 +440,10 @@ BANK_STOCKS = {"HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "INDUSI
 DOW_MAP = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4}
 IST = pytz.timezone("Asia/Kolkata")
 
+
+# ==============================================================================
+# 3. EXACT PINE SCRIPT TECHNICAL MATH
+# ==============================================================================
 def parse_hhmm(t_str: str) -> dt.time:
     h, m = map(int, t_str.split(":"))
     return dt.time(h, m)
@@ -343,7 +550,6 @@ class BrokerConnector:
         self.dhan = None
         if self.broker == "DHAN":
             from dhanhq import dhanhq
-            # FIXED: dhanhq library expects access_token as main argument or client_id/access_token correctly mapped
             token = str(cfg["DHAN_ACCESS_TOKEN"]).strip()
             cid = str(cfg["DHAN_CLIENT_ID"]).strip()
             try:
@@ -2399,7 +2605,7 @@ def run_streamlit_desktop_app():
             st.subheader("Live Candlestick Chart + All 12 Pine Script Tables")
             components.html(dash_html, height=820, scrolling=True)
         else:
-            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein — chart aur saari 12 tables yahan load ho jayengi.")
+            st.info("Upar 'Fetch & Evaluate Live Data' button dabayein — chart aur saari 12 tables yahan load ho jayengi.")
 
         if engine.trade_journal:
             st.subheader("Session Trade Journal")
@@ -2431,4 +2637,3 @@ if __name__ == "__main__":
                     except Exception as exc: print(f"[Error] {exc}")
                     time.sleep(2)
                 time.sleep(0.5)
-
