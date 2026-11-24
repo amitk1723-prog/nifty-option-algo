@@ -212,29 +212,25 @@ PARAMS = {
     "scBankOk": True,
 }
 
-
 # ==============================================================================
-# 2B. DASHBOARD DISPLAY SETTINGS (nifty_dash tables / chart ki position aur show-hide)
+# 2B. DASHBOARD DISPLAY SETTINGS
 # ==============================================================================
 _dd = dt.date.today()
 DASH = {
-    "textSz": "tiny",              # "tiny", "small", "normal" (table font)
-    "showDetail": True,            # True = SIGNAL table ki saari detail rows (Bull/Bear, EMA, VWAP, RSI, ADX ...)
-    "showMk": True,                # Chart par BUY/EXIT markers
-    "lblMode": "ON",               # "ON" = marker par poora text | "OFF" = sirf BUY CE / BUY PE / EXIT
+    "textSz": "tiny",
+    "showDetail": True,
+    "showMk": True,
+    "lblMode": "ON",
     "lblBars": 0,
-    "wfArrow": True,               # Chart par FINAL BUY (blue) arrow
-    "wfMaShow": False,             # Final Buy rule D ki fast/slow MA line chart par
-    # Table positions: Top Left/Center/Right, Middle Left/Right, Bottom Left/Center/Right
+    "wfArrow": True,
+    "wfMaShow": False,
     "posSig": "Top Right", "posLg": "Bottom Right", "posBr": "Top Left", "posOi": "Middle Left",
     "posLs": "Bottom Left", "scPos": "Top Center", "scPosA": "Middle Right", "posJ": "Bottom Center",
     "posPh": "Bottom Center", "posXs": "Middle Right", "gdPos": "Top Center", "vp_pos": "Middle Left",
-    # Table show/hide
     "showLog": True, "showList": True, "scAll": True, "jShow": True, "phShow": True,
     "xsShow": True, "gdShow": True, "vp_showTbl": True,
-    "jPg": 1,                      # Journal page number
-    "vp_useSpot": True,            # VOL PCR table me spot/chart source dikhane ke liye
-    # Phase-wise stats ke dates (entry date se): P1 = ph1S..ph2S, P2 = ph2S..phE
+    "jPg": 1,
+    "vp_useSpot": True,
     "ph1S": (_dd - dt.timedelta(days=60)).isoformat(),
     "ph2S": (_dd - dt.timedelta(days=30)).isoformat(),
     "phE": _dd.isoformat(),
@@ -256,14 +252,9 @@ def get_trade_strike(spot_price: float, side: str) -> float:
     return atm
 
 def show_real_trade_report(connector=None):
-    """
-    Algo ne ab tak kitne REAL LIVE TRADES liye hain (Local CSV + Broker Order/Trade Book),
-    un sabhi ka poora hisab aur P&L report dikhata hai.
-    """
     print("\n" + "=" * 82)
     print("   ALGO REAL TRADE REPORT (KITNE REAL TRADE LIYE GAYE HAIN)")
     print("=" * 82)
-
     csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
     if os.path.exists(csv_file):
         df_local = pd.read_csv(csv_file)
@@ -275,7 +266,6 @@ def show_real_trade_report(connector=None):
             wins = len(closed_df[closed_df["PnL_Pts"] > 0]) if "PnL_Pts" in closed_df.columns else 0
             losses = len(closed_df[closed_df["PnL_Pts"] <= 0]) if "PnL_Pts" in closed_df.columns else 0
             net_pts = closed_df["PnL_Pts"].sum() if "PnL_Pts" in closed_df.columns else 0.0
-
             print(f"[A] ALGO JOURNAL RECORD ({csv_file}):")
             print(f"    Total Blue Arrow Real Trades : {total_real} (Broker Live Orders Sent: {executed_orders})")
             print(f"    Open Trades: {len(open_df)} | Closed Trades: {len(closed_df)} (Win: {wins} / Loss: {losses}) | Net P&L: {net_pts:+.2f} pts")
@@ -296,120 +286,12 @@ def show_real_trade_report(connector=None):
             print(f"    Broker book fetch info: {e}")
     print("=" * 82 + "\n")
 
-
 def interactive_option_selector(connector=None):
     if not CONFIG.get("INTERACTIVE_MENU", True) or os.environ.get("GITHUB_ACTIONS") == "true":
         return
-
     print("\n" + "=" * 68)
     print("   NIFTY OPTION SIGNAL PRO v28 - OPTION & BACKTEST SELECTOR")
     print("=" * 68)
-
-    # 1. Mode Selection (LIVE vs BACKTEST vs REAL TRADE REPORT)
-    print("\n[1] Mode Chunein:")
-    print("    1 = LIVE Trading / Alerts (Default)")
-    print("    2 = BACKTEST (Historical Check - Bina Live Trade Liye Bhi Chalega)")
-    print("    3 = REAL TRADE REPORT (Algo Ne Ab Tak Kitne Real Trade Liye Uska Hisab Dekhein)")
-    m_in = input("    Option number dalein (Enter = 1): ").strip()
-
-    if m_in == "3":
-        show_real_trade_report(connector)
-        cont = input("Kya ab LIVE ya BACKTEST chalana hai? (1 = LIVE, 2 = BACKTEST, Enter = Exit): ").strip()
-        if cont not in ("1", "2"):
-            raise SystemExit(0)
-        m_in = cont
-
-    if m_in == "2":
-        CONFIG["RUN_MODE"] = "BACKTEST"
-        d_in = input(f"    Kitne din ka Backtest chahiye? (Enter = {CONFIG['BACKTEST_DAYS']}): ").strip()
-        if d_in.isdigit() and int(d_in) > 0:
-            CONFIG["BACKTEST_DAYS"] = int(d_in)
-
-        print("\n[1B] Backtest Type Chunein (Same Data Par):")
-        print("    1 = BOTH (Initial Signals + Real Blue Arrow Final Buy Dono Ka Comparison)")
-        print("    2 = REAL_BLUE_ONLY (Sirf Real Trade - Blue Arrow Final Buy Confirm Hone Par Entry)")
-        print("    3 = ALL_SIGNALS (Har Initial Green/Red Arrow Signal Par Entry)")
-        bt_in = input("    Option number dalein (Enter = 1 BOTH): ").strip()
-        bt_map = {"1": "BOTH", "2": "REAL_BLUE_ONLY", "3": "ALL_SIGNALS"}
-        if bt_in in bt_map:
-            CONFIG["BACKTEST_ENTRY_TYPE"] = bt_map[bt_in]
-    else:
-        CONFIG["RUN_MODE"] = "LIVE"
-
-    # 2. Strike Selection (ATM vs ITM_1 vs ITM_2 vs OTM_1)
-    print("\n[2] Strike Selection (Kaun sa Option Buy Karna Hai):")
-    print("    1 = ATM (Round Figure ATM - e.g. 25500 CE/PE)")
-    print("    2 = ITM 1 (In-The-Money 1 Step - e.g. CE: 25450 / PE: 25550)")
-    print("    3 = ITM 2 (In-The-Money 2 Step - e.g. CE: 25400 / PE: 25600)")
-    print("    4 = OTM 1 (Out-Of-The-Money 1 Step - e.g. CE: 25550 / PE: 25450)")
-    s_in = input("    Option number dalein (Enter = 1 ATM): ").strip()
-    strike_map = {"1": "ATM", "2": "ITM_1", "3": "ITM_2", "4": "OTM_1"}
-    if s_in in strike_map:
-        PARAMS["strikeMode"] = strike_map[s_in]
-
-    # 3. Expiry Selection
-    print("\n[3] Expiry Selection:")
-    avail_exps = []
-    if connector is not None:
-        try:
-            avail_exps = connector.get_all_upcoming_expiries()
-        except Exception:
-            avail_exps = []
-
-    if avail_exps:
-        print(f"    Broker Upcoming Expiries: {', '.join(avail_exps[:5])}")
-    print("    1 = CURRENT_WEEK (Is Hafte Ki Nearest Expiry)")
-    print("    2 = NEXT_WEEK    (Agle Hafte Ki Weekly Expiry)")
-    print("    3 = MONTHLY      (Is Mahine Ki Monthly Expiry)")
-    print("    4 = MANUAL       (Khud Date Dalein YYYY-MM-DD)")
-    e_in = input("    Option number dalein (Enter = 1 CURRENT_WEEK): ").strip()
-    exp_map = {"1": "CURRENT_WEEK", "2": "NEXT_WEEK", "3": "MONTHLY", "4": "MANUAL"}
-    if e_in in exp_map:
-        PARAMS["expiryMode"] = exp_map[e_in]
-        if PARAMS["expiryMode"] == "MANUAL":
-            dt_in = input("    Expiry Date likhein (e.g. 2026-11-24): ").strip()
-            if dt_in:
-                PARAMS["manualExpiry"] = dt_in
-
-    # 4. Target Exit Selection (T1, T2, T1_T2, MANUAL)
-    print("\n[4] Target Exit Option Chunein:")
-    print("    1 = T1     (Target 1 hit hote hi 100% exit)")
-    print("    2 = T2     (T1 par SL +1R trail, Target 2 par 100% exit)")
-    print("    3 = T1_T2  (50% T1 par book + SL Entry par, baaki 50% T2 par exit)")
-    print("    4 = MANUAL (Auto Target exit OFF - jab chahein tab exit karein)")
-    x_in = input("    Option number dalein (Enter = 1 T1): ").strip()
-    exit_map = {"1": "T1", "2": "T2", "3": "T1_T2", "4": "MANUAL"}
-    if x_in in exit_map:
-        PARAMS["exitMode"] = exit_map[x_in]
-
-    # 5. Option OI & Volume Strike Span (2 to 9)
-    print("\n[5] Option OI & Volume Strike Range (ATM se Upar aur Neeche kitne strike: 2 se 9):")
-    oi_in = input(f"    Option OI Strike Span dalein [2-9] (Enter = {PARAMS['ocN']}): ").strip()
-    if oi_in.isdigit() and 2 <= int(oi_in) <= 9:
-        PARAMS["ocN"] = int(oi_in)
-    vol_in = input(f"    Option Volume PCR Strike Span dalein [2-9] (Enter = {PARAMS['ovN']}): ").strip()
-    if vol_in.isdigit() and 2 <= int(vol_in) <= 9:
-        PARAMS["ovN"] = int(vol_in)
-
-    # 6. Auto Order Confirmation (Only for LIVE mode)
-    if CONFIG["RUN_MODE"] == "LIVE":
-        print("\n[6] Order Execution Mode:")
-        print("    1 = SIRF ALERTS (Safe Mode - Blue Arrow par alert aayega, order nahi lagega)")
-        print("    2 = AUTO LIVE ORDER (Blue Arrow par Broker me real order lag jayega)")
-        o_in = input("    Option number dalein (Enter = 1 Safe Alert Mode): ").strip()
-        CONFIG["AUTO_PLACE_ORDER"] = (o_in == "2")
-
-    # 7. Dashboard (chart + tables)
-    print("\n[7] Dashboard (candle chart + 12 tables -> dashboard.html):")
-    print("    1 = ON (Default)   2 = OFF   3 = ON + tables console me bhi")
-    d_in2 = input("    Option number dalein (Enter = 1 ON): ").strip()
-    CONFIG["DASH_ON"] = (d_in2 != "2")
-    CONFIG["DASH_CONSOLE_TABLES"] = (d_in2 == "3")
-
-    print("\n" + "-" * 68)
-    print(f"SELECTED -> Mode: {CONFIG['RUN_MODE']} ({CONFIG['BACKTEST_ENTRY_TYPE']}) | Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']} | OI: +-{PARAMS['ocN']} | Vol: +-{PARAMS['ovN']}")
-    print("-" * 68 + "\n")
-
 
 BREADTH_STOCKS = [
     ("HDFCBANK", 9.85), ("ICICIBANK", 9.45), ("RELIANCE", 7.83), ("BHARTIARTL", 5.00),
@@ -440,10 +322,6 @@ BANK_STOCKS = {"HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "INDUSI
 DOW_MAP = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4}
 IST = pytz.timezone("Asia/Kolkata")
 
-
-# ==============================================================================
-# 3. EXACT PINE SCRIPT TECHNICAL MATH
-# ==============================================================================
 def parse_hhmm(t_str: str) -> dt.time:
     h, m = map(int, t_str.split(":"))
     return dt.time(h, m)
@@ -485,14 +363,12 @@ def calc_dmi(df: pd.DataFrame, length: int = 14):
     down = -low.diff()
     plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=df.index)
     minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=df.index)
-
     tr = pd.concat([
         high - low,
         (high - close.shift(1)).abs(),
         (low - close.shift(1)).abs()
     ], axis=1).max(axis=1)
     atr_s = calc_rma(tr, length)
-
     di_plus = 100.0 * calc_rma(plus_dm, length) / atr_s.replace(0, np.nan)
     di_minus = 100.0 * calc_rma(minus_dm, length) / atr_s.replace(0, np.nan)
     dx = 100.0 * (di_plus - di_minus).abs() / (di_plus + di_minus).replace(0, np.nan)
@@ -506,11 +382,9 @@ def calc_supertrend(df: pd.DataFrame, factor: float = 3.0, atr_period: int = 10)
     lowerband = (hl2 - factor * atr).values
     close = df["close"].values
     n = len(df)
-
     final_ub = np.zeros(n)
     final_lb = np.zeros(n)
     sdir = np.ones(n)
-
     for i in range(n):
         if i == 0:
             final_ub[i] = upperband[i]
@@ -519,14 +393,12 @@ def calc_supertrend(df: pd.DataFrame, factor: float = 3.0, atr_period: int = 10)
             continue
         final_ub[i] = upperband[i] if (upperband[i] < final_ub[i-1] or close[i-1] > final_ub[i-1]) else final_ub[i-1]
         final_lb[i] = lowerband[i] if (lowerband[i] > final_lb[i-1] or close[i-1] < final_lb[i-1]) else final_lb[i-1]
-
         if sdir[i-1] == 1 and close[i] > final_ub[i-1]:
             sdir[i] = -1
         elif sdir[i-1] == -1 and close[i] < final_lb[i-1]:
             sdir[i] = 1
         else:
             sdir[i] = sdir[i-1]
-
     return pd.Series(sdir, index=df.index)
 
 def calc_vwap(df: pd.DataFrame) -> pd.Series:
@@ -538,7 +410,6 @@ def calc_vwap(df: pd.DataFrame) -> pd.Series:
     cum_pv = pv.groupby(dates).cumsum()
     cum_vol = df["volume"].groupby(dates).cumsum()
     return cum_pv / cum_vol.replace(0, np.nan)
-
 
 # ==============================================================================
 # 4. BROKER CONNECTOR (Fixed dhanhq initialization)
@@ -552,13 +423,17 @@ class BrokerConnector:
             from dhanhq import dhanhq
             token = str(cfg["DHAN_ACCESS_TOKEN"]).strip()
             cid = str(cfg["DHAN_CLIENT_ID"]).strip()
+            # SAFE INITIALIZATION TO AVOID POSITIONAL ARGUMENT ERRORS
             try:
-                self.dhan = dhanhq(cid, token)
+                self.dhan = dhanhq(client_id=cid, access_token=token)
             except Exception:
                 try:
-                    self.dhan = dhanhq(token)
-                except Exception as e:
-                    raise RuntimeError(f"Dhan init failed: {e}")
+                    self.dhan = dhanhq(cid, token)
+                except Exception:
+                    try:
+                        self.dhan = dhanhq(token)
+                    except Exception as e:
+                        raise RuntimeError(f"Dhan init failed: {e}")
         elif self.broker == "UPSTOX":
             self.headers = {
                 "Accept": "application/json",
@@ -640,12 +515,9 @@ class BrokerConnector:
         mode = PARAMS["expiryMode"].upper()
         if mode == "MANUAL" and PARAMS["manualExpiry"].strip():
             return PARAMS["manualExpiry"].strip()
-
         exps = self.get_all_upcoming_expiries()
-        if not exps:
-            return ""
-        if mode == "NEXT_WEEK" and len(exps) > 1:
-            return exps[1]
+        if not exps: return ""
+        if mode == "NEXT_WEEK" and len(exps) > 1: return exps[1]
         if mode == "MONTHLY":
             cur_ym = exps[0][:7]
             month_exps = [e for e in exps if e.startswith(cur_ym)]
@@ -655,14 +527,11 @@ class BrokerConnector:
     def get_candles(self, key: str, interval: str = "5", days: int = 10) -> pd.DataFrame:
         to_dt = dt.datetime.now(IST)
         from_dt = to_dt - dt.timedelta(days=days)
-
         if self.broker == "DHAN":
             sec_id = self.inst.get(key)
-            if not sec_id:
-                return pd.DataFrame()
+            if not sec_id: return pd.DataFrame()
             seg = "IDX_I" if key in ("NIFTY_SPOT", "INDIAVIX") else ("NSE_FNO" if key == "NIFTY_FUT" else "NSE_EQ")
             itype = "INDEX" if seg == "IDX_I" else ("FUTIDX" if seg == "NSE_FNO" else "EQUITY")
-
             if interval == "D":
                 res = self.dhan.historical_daily_data(
                     security_id=sec_id, exchange_segment=seg, instrument_type=itype,
@@ -688,8 +557,7 @@ class BrokerConnector:
 
         elif self.broker == "UPSTOX":
             ikey = self.inst.get(key)
-            if not ikey:
-                return pd.DataFrame()
+            if not ikey: return pd.DataFrame()
             umap = {"1": ("minutes", "1"), "3": ("minutes", "1"), "5": ("minutes", "5"),
                     "15": ("minutes", "15"), "60": ("hours", "1"), "240": ("hours", "1"), "D": ("days", "1")}
             utype, uval = umap[interval]
@@ -706,8 +574,7 @@ class BrokerConnector:
                 ).json()
                 c_intra = r2.get("data", {}).get("candles", [])
             rows = c_intra + c_hist
-            if not rows:
-                return pd.DataFrame()
+            if not rows: return pd.DataFrame()
             df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
             df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_convert(IST)
             df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").set_index("timestamp")
@@ -718,7 +585,6 @@ class BrokerConnector:
                 "open": "first", "high": "max", "low": "min",
                 "close": "last", "volume": "sum", "oi": "last"
             }).dropna(subset=["close"])
-
         return df
 
     def get_breadth_changes(self) -> dict:
@@ -737,19 +603,14 @@ class BrokerConnector:
         oc_n = clamp_strike_span(oc_n)
         ov_n = clamp_strike_span(ov_n)
         selected_exp = self.get_selected_expiry()
-
         oi_ce, oi_pe = {}, {}
         vol_ce, vol_pe = {}, {}
-        oi_cnt = 0
-        vol_cnt = 0
-        ltp_map = {}
+        oi_cnt = 0; vol_cnt = 0; ltp_map = {}
         ltp_n = max(oc_n, ov_n, 3)
-
         try:
             if self.broker == "DHAN":
                 res = self.dhan.option_chain(under_security_id=int(self.inst["NIFTY_SPOT"]), under_exchange_segment="IDX_I", expiry=selected_exp)
                 oc = res.get("data", {}).get("oc", {})
-
                 for off in range(-oc_n, oc_n + 1):
                     k_str = f"{atm_now + off * PARAMS['optStep']:.6f}"
                     if k_str in oc:
@@ -757,9 +618,7 @@ class BrokerConnector:
                         p_oi = oc[k_str].get("pe", {}).get("oi", 0) or 0
                         if c_oi > 0: oi_cnt += 1
                         if p_oi > 0: oi_cnt += 1
-                        oi_ce[off] = c_oi
-                        oi_pe[off] = p_oi
-
+                        oi_ce[off] = c_oi; oi_pe[off] = p_oi
                 for off in range(-ov_n, ov_n + 1):
                     k_str = f"{locked_atm_vol + off * PARAMS['optStep']:.6f}"
                     if k_str in oc:
@@ -767,9 +626,7 @@ class BrokerConnector:
                         p_v = oc[k_str].get("pe", {}).get("volume", 0) or 0
                         if c_v > 0: vol_cnt += 1
                         if p_v > 0: vol_cnt += 1
-                        vol_ce[off] = c_v
-                        vol_pe[off] = p_v
-
+                        vol_ce[off] = c_v; vol_pe[off] = p_v
                 for off in range(-ltp_n, ltp_n + 1):
                     k_val = atm_now + off * PARAMS["optStep"]
                     k_str = f"{k_val:.6f}"
@@ -777,7 +634,6 @@ class BrokerConnector:
                         ltp_map[round(float(k_val), 2)] = {
                             "ce": oc[k_str].get("ce", {}).get("last_price", np.nan),
                             "pe": oc[k_str].get("pe", {}).get("last_price", np.nan)}
-
             elif self.broker == "UPSTOX":
                 res = requests.get(
                     f"https://api.upstox.com/v2/option/chain?instrument_key=NSE_INDEX|Nifty 50&expiry_date={selected_exp}",
@@ -789,29 +645,22 @@ class BrokerConnector:
                     p_md = row.get("put_options", {}).get("market_data", {})
                     if abs((k - atm_now) / PARAMS["optStep"]) <= ltp_n:
                         ltp_map[round(float(k), 2)] = {"ce": c_md.get("ltp", np.nan), "pe": p_md.get("ltp", np.nan)}
-
                     off_oi = int(round((k - atm_now) / PARAMS["optStep"]))
                     if -oc_n <= off_oi <= oc_n:
-                        c_oi = c_md.get("oi", 0) or 0
-                        p_oi = p_md.get("oi", 0) or 0
+                        c_oi = c_md.get("oi", 0) or 0; p_oi = p_md.get("oi", 0) or 0
                         if c_oi > 0: oi_cnt += 1
                         if p_oi > 0: oi_cnt += 1
-                        oi_ce[off_oi] = c_oi
-                        oi_pe[off_oi] = p_oi
-
+                        oi_ce[off_oi] = c_oi; oi_pe[off_oi] = p_oi
                     off_v = int(round((k - locked_atm_vol) / PARAMS["optStep"]))
                     if -ov_n <= off_v <= ov_n:
-                        c_v = c_md.get("volume", 0) or 0
-                        p_v = p_md.get("volume", 0) or 0
+                        c_v = c_md.get("volume", 0) or 0; p_v = p_md.get("volume", 0) or 0
                         if c_v > 0: vol_cnt += 1
                         if p_v > 0: vol_cnt += 1
-                        vol_ce[off_v] = c_v
-                        vol_pe[off_v] = p_v
+                        vol_ce[off_v] = c_v; vol_pe[off_v] = p_v
         except Exception as e:
             print(f"Option Chain fetch warning: {e}")
 
-        oc_ce_sum = sum(oi_ce.values())
-        oc_pe_sum = sum(oi_pe.values())
+        oc_ce_sum = sum(oi_ce.values()); oc_pe_sum = sum(oi_pe.values())
         oc_ok = (oi_cnt >= 4) and (oc_ce_sum > 0) and (oc_pe_sum > 0)
         oc_pcr = (oc_pe_sum / oc_ce_sum) if oc_ok else np.nan
         oc_c_arr = [oi_ce.get(i, 0) for i in range(0, oc_n + 1)]
@@ -819,8 +668,7 @@ class BrokerConnector:
         oc_call_k = (atm_now + int(np.argmax(oc_c_arr)) * PARAMS["optStep"]) if (oc_ok and max(oc_c_arr) > 0) else np.nan
         oc_put_k = (atm_now - int(np.argmax(oc_p_arr)) * PARAMS["optStep"]) if (oc_ok and max(oc_p_arr) > 0) else np.nan
 
-        vol_ce_sum = sum(vol_ce.values())
-        vol_pe_sum = sum(vol_pe.values())
+        vol_ce_sum = sum(vol_ce.values()); vol_pe_sum = sum(vol_pe.values())
         vol_ok = (vol_cnt >= 4) and (vol_ce_sum > 0) and (vol_pe_sum > 0)
         vol_pcr = (vol_pe_sum / vol_ce_sum) if vol_ok else np.nan
         vol_sig = 0.0 if np.isnan(vol_pcr) else (1.0 if vol_pcr >= PARAMS["ovBull"] else (-1.0 if vol_pcr <= PARAMS["ovBear"] else 0.0))
@@ -859,37 +707,24 @@ class BrokerConnector:
                     sec_id = str(opt_df.iloc[0]["SEM_SMST_SECURITY_ID"])
                     txn = self.dhan.BUY if action == "BUY" else self.dhan.SELL
                     self.dhan.place_order(
-                        security_id=sec_id,
-                        exchange_segment=self.dhan.NSE_FNO,
-                        transaction_type=txn,
-                        quantity=qty,
-                        order_type=self.dhan.MARKET,
-                        product_type=self.dhan.INTRA,
-                        price=0
+                        security_id=sec_id, exchange_segment=self.dhan.NSE_FNO,
+                        transaction_type=txn, quantity=qty, order_type=self.dhan.MARKET,
+                        product_type=self.dhan.INTRA, price=0
                     )
                     return True
             elif self.broker == "UPSTOX":
                 opt_df = df_m[
-                    (df_m["segment"] == "NSE_FO") &
-                    (df_m["name"] == "NIFTY") &
-                    (df_m["instrument_type"] == opt_type) &
-                    (df_m["strike_price"] == float(strike))
+                    (df_m["segment"] == "NSE_FO") & (df_m["name"] == "NIFTY") &
+                    (df_m["instrument_type"] == opt_type) & (df_m["strike_price"] == float(strike))
                 ].copy()
                 opt_df["exp_str"] = opt_df["expiry"].apply(lambda x: dt.datetime.fromtimestamp(x / 1000, IST).strftime("%Y-%m-%d"))
                 opt_df = opt_df[opt_df["exp_str"] == exp]
                 if not opt_df.empty:
                     ikey = opt_df.iloc[0]["instrument_key"]
                     payload = {
-                        "quantity": qty,
-                        "product": "I",
-                        "validity": "DAY",
-                        "price": 0,
-                        "instrument_token": ikey,
-                        "order_type": "MARKET",
-                        "transaction_type": action,
-                        "disclosed_quantity": 0,
-                        "trigger_price": 0,
-                        "is_amo": False
+                        "quantity": qty, "product": "I", "validity": "DAY", "price": 0,
+                        "instrument_token": ikey, "order_type": "MARKET", "transaction_type": action,
+                        "disclosed_quantity": 0, "trigger_price": 0, "is_amo": False
                     }
                     requests.post("https://api.upstox.com/v2/order/place", json=payload, headers=self.headers, timeout=10)
                     return True
@@ -903,24 +738,13 @@ class BrokerConnector:
 NAN = float("nan")
 SECTOR_NAMES = list(SECTOR_MAP.keys())
 
-def na(x):
-    return x is None or (isinstance(x, float) and math.isnan(x))
-
-def nz(x, d=0.0):
-    return d if na(x) else x
-
-def fmtG(g, flat=0.02):
-    return "--" if na(g) else (("+" if g >= 0 else "") + f"{g:.2f}%")
-
-def colG(g, flat):
-    return "gray" if na(g) else ("green" if g > flat else ("red" if g < -flat else "gray"))
-
-def pfTxt(gp, gl):
-    return f"{gp / gl:.2f}" if gl > 0 else ("inf" if gp > 0 else "--")
-
+def na(x): return x is None or (isinstance(x, float) and math.isnan(x))
+def nz(x, d=0.0): return d if na(x) else x
+def fmtG(g, flat=0.02): return "--" if na(g) else (("+" if g >= 0 else "") + f"{g:.2f}%")
+def colG(g, flat): return "gray" if na(g) else ("green" if g > flat else ("red" if g < -flat else "gray"))
+def pfTxt(gp, gl): return f"{gp / gl:.2f}" if gl > 0 else ("inf" if gp > 0 else "--")
 def fmt_t(t, fmt="dd MMM HH:mm"):
-    if t is None:
-        return "--"
+    if t is None: return "--"
     m = {"dd/MM HH:mm": "%d/%m %H:%M", "dd MMM HH:mm": "%d %b %H:%M", "dd/MM": "%d/%m"}
     return pd.Timestamp(t).strftime(m.get(fmt, "%d %b %H:%M"))
 
@@ -933,10 +757,8 @@ def build_tables(eng, o, D, vp, C):
     fl = C.flatPct
     rows = {}
     sd = C.showDetail
-
     def rLV(r, l, v, col):
-        if r < 22 or sd:
-            rows[r] = (l, v, col)
+        if r < 22 or sd: rows[r] = (l, v, col)
 
     pre = getattr(o, "preCE", False) or getattr(o, "preAlertPE", False)
     actCol = ("green" if o.act.startswith("BUY CE") else "red" if o.act.startswith("BUY PE") else
@@ -986,7 +808,7 @@ def build_tables(eng, o, D, vp, C):
     orTxt = "Forming" if not o.orDone else ("Break UP" if o.close > o.orH else ("Break DOWN" if o.close < o.orL else "Inside"))
     rLV(27, "Opening Range", orTxt, "green" if orTxt == "Break UP" else ("red" if orTxt == "Break DOWN" else "gray"))
     rLV(28, "Volume", "N/A" if not o.volOk else ("Surge" if o.volSurge else "Normal"), "green" if o.volSurge else "gray")
-    
+
     optShow = (not o.isPrem) and o.shOn
     optEnU = C.optEntry if C.optEntry > 0 else o.optEnPx
     if optShow:
@@ -1154,16 +976,12 @@ def build_tables(eng, o, D, vp, C):
 def render_console(tabs, only=None):
     out = []
     for t in tabs:
-        if not t["enabled"] or (only and t["name"] not in only):
-            continue
+        if not t["enabled"] or (only and t["name"] not in only): continue
         out.append(f"+-- {t['name']} ({t['pos']}) " + "-" * 20)
         for r in t["rows"]:
-            if t["cols"] == 1:
-                out.append(f"| {r[0] if r[0] is not None else ''}{r[1] if r[0] is None else ''}")
-            elif t["cols"] == 4:
-                out.append(f"| {r[0]:<22} {r[1]:>8}   {r[3]:<22} {r[4]:>8}")
-            else:
-                out.append(f"| {r[0]:<16} {r[1]}")
+            if t["cols"] == 1: out.append(f"| {r[0] if r[0] is not None else ''}{r[1] if r[0] is None else ''}")
+            elif t["cols"] == 4: out.append(f"| {r[0]:<22} {r[1]:>8}   {r[3]:<22} {r[4]:>8}")
+            else: out.append(f"| {r[0]:<16} {r[1]}")
     return "\n".join(out)
 
 CSS_COL = {"green": "#1b8f4b", "red": "#c0392b", "gray": "#4a5568", "orange": "#d9822b", "blue": "#2563eb", "purple": "#7c3aed",
@@ -1175,27 +993,20 @@ POS_CSS = {"Top Left": "top:6px;left:6px;align-items:flex-start", "Top Center": 
            "Bottom Right": "bottom:30px;right:70px;align-items:flex-end"}
 
 def _clean(x):
-    if isinstance(x, float) and (math.isnan(x) or math.isinf(x)):
-        return None
+    if isinstance(x, float) and (math.isnan(x) or math.isinf(x)): return None
     return x
 
 def _html_table(t, fs):
     h = [f'<table class="t" style="font-size:{fs}px">']
-    if t["title"]:
-        h.append(f'<tr><th colspan="{2 if t["cols"] != 1 else 1}" style="background:{CSS_COL["navy"]}">{t["title"]}</th></tr>')
+    if t["title"]: h.append(f'<tr><th colspan="{2 if t["cols"] != 1 else 1}" style="background:{CSS_COL["navy"]}">{t["title"]}</th></tr>')
     for r in t["rows"]:
-        if t["cols"] == 1:
-            h.append(f'<tr><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td></tr>')
-        elif t["cols"] == 4:
-            h.append(f'<tr><td style="background:{CSS_COL["navy"]}">{_esc(r[0])}</td><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td>'
-                     f'<td style="background:{CSS_COL["navy"]}">{_esc(r[3])}</td><td style="background:{CSS_COL[r[5]]}">{_esc(r[4])}</td></tr>')
-        else:
-            h.append(f'<tr><td style="background:{CSS_COL["navy"]}">{_esc(r[0])}</td><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td></tr>')
+        if t["cols"] == 1: h.append(f'<tr><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td></tr>')
+        elif t["cols"] == 4: h.append(f'<tr><td style="background:{CSS_COL["navy"]}">{_esc(r[0])}</td><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td><td style="background:{CSS_COL["navy"]}">{_esc(r[3])}</td><td style="background:{CSS_COL[r[5]]}">{_esc(r[4])}</td></tr>')
+        else: h.append(f'<tr><td style="background:{CSS_COL["navy"]}">{_esc(r[0])}</td><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td></tr>')
     h.append("</table>")
     return "".join(h)
 
-def _esc(s):
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def _esc(s): return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 def render_html(tabs, eng, o, C, path):
     fs = {"tiny": 10, "small": 12, "normal": 14}.get(C.textSz, 10)
@@ -1209,31 +1020,21 @@ def render_html(tabs, eng, o, C, path):
     lblOn = C.lblMode != "OFF" and (C.lblBars == 0 or True)
     for e in ev:
         k = e["k"]
-        if k == "BUY CE" and C.showMk:
-            marks.append(dict(time=ts(e["t"]), position="belowBar", color="#16a34a" if e.get("p", 0) < 2 else "#84cc16", shape="arrowUp", text=(e["text"].replace("\n", " ") if lblOn else "BUY CE")))
-        elif k == "BUY PE" and C.showMk:
-            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#dc2626" if e.get("p", 0) < 2 else "#d946ef", shape="arrowDown", text=(e["text"].replace("\n", " ") if lblOn else "BUY PE")))
-        elif k == "EXIT" and C.showMk:
-            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#16a34a" if e.get("win") else "#dc2626", shape="circle", text=e["text"] if lblOn else "EXIT"))
-        elif k == "FINAL BUY CE" and C.wfArrow:
-            marks.append(dict(time=ts(e["t"]), position="belowBar", color="#2563eb", shape="arrowUp", text="FB " + e["text"]))
-        elif k == "FINAL BUY PE" and C.wfArrow:
-            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#2563eb", shape="arrowDown", text="FB " + e["text"]))
-    if getattr(o, "preCE", False):
-        marks.append(dict(time=ts(o.t_open), position="belowBar", color="#eab308", shape="square", text="PRE CE"))
-    if getattr(o, "preAlertPE", False):
-        marks.append(dict(time=ts(o.t_open), position="aboveBar", color="#eab308", shape="square", text="PRE PE"))
+        if k == "BUY CE" and C.showMk: marks.append(dict(time=ts(e["t"]), position="belowBar", color="#16a34a" if e.get("p", 0) < 2 else "#84cc16", shape="arrowUp", text=(e["text"].replace("\n", " ") if lblOn else "BUY CE")))
+        elif k == "BUY PE" and C.showMk: marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#dc2626" if e.get("p", 0) < 2 else "#d946ef", shape="arrowDown", text=(e["text"].replace("\n", " ") if lblOn else "BUY PE")))
+        elif k == "EXIT" and C.showMk: marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#16a34a" if e.get("win") else "#dc2626", shape="circle", text=e["text"] if lblOn else "EXIT"))
+        elif k == "FINAL BUY CE" and C.wfArrow: marks.append(dict(time=ts(e["t"]), position="belowBar", color="#2563eb", shape="arrowUp", text="FB " + e["text"]))
+        elif k == "FINAL BUY PE" and C.wfArrow: marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#2563eb", shape="arrowDown", text="FB " + e["text"]))
+    if getattr(o, "preCE", False): marks.append(dict(time=ts(o.t_open), position="belowBar", color="#eab308", shape="square", text="PRE CE"))
+    if getattr(o, "preAlertPE", False): marks.append(dict(time=ts(o.t_open), position="aboveBar", color="#eab308", shape="square", text="PRE PE"))
     marks.sort(key=lambda m: m["time"])
     hist = [h for h in eng.hist if h["t"] >= t0]
-
-    def series(key):
-        return [({"time": ts(h["t"]), "value": h[key]} if not na(h[key]) else {"time": ts(h["t"])}) for h in hist]
+    def series(key): return [({"time": ts(h["t"]), "value": h[key]} if not na(h[key]) else {"time": ts(h["t"])}) for h in hist]
     lines = []
     if o.posSt != 0 and not na(o.posEn):
         lines += [dict(price=o.posEn, color="#2563eb", title="ENTRY %.1f" % o.posEn, style=0), dict(price=o.posSl, color="#dc2626", title="SL %.1f" % o.posSl, style=2),
                   dict(price=o.posT1, color="#16a34a", title="T1 %.1f" % o.posT1, style=2), dict(price=o.posT2, color="#16a34a", title="T2 %.1f" % o.posT2, style=2)]
-        if not na(o.revPlot):
-            lines.append(dict(price=o.revPlot, color="#f59e0b", title="REVERSAL %.1f" % o.revPlot, style=1))
+        if not na(o.revPlot): lines.append(dict(price=o.revPlot, color="#f59e0b", title="REVERSAL %.1f" % o.revPlot, style=1))
     if not o.isPrem:
         if not na(o.callEff): lines.append(dict(price=o.callEff, color="#ef4444", title="CALL WALL %.0f" % o.callEff, style=1))
         if not na(o.putEff): lines.append(dict(price=o.putEff, color="#22c55e", title="PUT WALL %.0f" % o.putEff, style=1))
@@ -1241,8 +1042,7 @@ def render_html(tabs, eng, o, C, path):
                    wf=series("wf"), ws=series("ws"), showMa=bool(C.wfMaShow))
     zones = {}
     for t in tabs:
-        if t["enabled"] and t["rows"]:
-            zones.setdefault(t["pos"], []).append(_html_table(t, fs))
+        if t["enabled"] and t["rows"]: zones.setdefault(t["pos"], []).append(_html_table(t, fs))
     zhtml = "".join(f'<div class="z" style="{POS_CSS[p]}">{"".join(v)}</div>' for p, v in zones.items() if p in POS_CSS)
     title = f"NIFTY OPT PRO - {o.t_open:%d %b %H:%M}  close {o.close:.1f}"
     html = f'''<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="20"><title>{title}</title>
@@ -1266,9 +1066,7 @@ if(P.showMa){{ln(P.wf,'#f59e0b',1); ln(P.ws,'#a855f7',1);}}
 P.lines.forEach(l=>cs.createPriceLine({{price:l.price,color:l.color,lineWidth:1,lineStyle:l.style,axisLabelVisible:true,title:l.title}}));
 ch.timeScale().fitContent();
 </script></body></html>'''
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(html)
-
+    with open(path, "w", encoding="utf-8") as f: f.write(html)
 
 # ==============================================================================
 # 5. COMPLETE STRATEGY ENGINE
@@ -1281,102 +1079,44 @@ class NiftyOptionProEngine:
         self.ovCtr = None
         self.bar_index = 0
         self.last_pre_alert_bar = -1
-
         self.real_trade_count = 0
         self.real_live_orders_sent = 0
         self.active_real_trade_id = ""
         self._load_existing_real_trade_count()
 
-        self.posSt = 0
-        self.posEn = np.nan
-        self.posSl = np.nan
-        self.posT1 = np.nan
-        self.posT2 = np.nan
-        self.posR = np.nan
-        self.posMv = False
-        self.t1Booked = False
-        self.activeStrike = 0.0
-        self.activeExpiry = ""
-        self.activeLots = 0
-        self.remainingLots = 0
-        self.realizedTradePnl = 0.0
-        self.lastExit = -1000
-        self.armCE = True
-        self.armPE = True
+        self.posSt = 0; self.posEn = np.nan; self.posSl = np.nan; self.posT1 = np.nan; self.posT2 = np.nan
+        self.posR = np.nan; self.posMv = False; self.t1Booked = False
+        self.activeStrike = 0.0; self.activeExpiry = ""; self.activeLots = 0; self.remainingLots = 0
+        self.realizedTradePnl = 0.0; self.lastExit = -1000; self.armCE = True; self.armPE = True
 
-        self.trade_journal = []
-        self.logs = []
-        self.winN = 0
-        self.lossN = 0
-        self.totPnl = 0.0
-        self.gp = 0.0
-        self.gl = 0.0
-        self.eqC = 0.0
-        self.eqPk = 0.0
-        self.maxDD = 0.0
-        self.entTx = ""
-        self.entT = None
-        self.entAdx = np.nan
-        self.entSc = np.nan
-        self.entProbCE = 50.0
-        self.entProbPE = 50.0
-        self.tkLo = np.nan
-        self.tkHi = np.nan
+        self.trade_journal = []; self.logs = []
+        self.winN = 0; self.lossN = 0; self.totPnl = 0.0; self.gp = 0.0; self.gl = 0.0
+        self.eqC = 0.0; self.eqPk = 0.0; self.maxDD = 0.0
+        self.entTx = ""; self.entT = None; self.entAdx = np.nan; self.entSc = np.nan
+        self.entProbCE = 50.0; self.entProbPE = 50.0; self.tkLo = np.nan; self.tkHi = np.nan
 
-        self.wSt = 0
-        self.wBar = 0
-        self.wSigC = np.nan
-        self.wSl = np.nan
-        self.wExt = np.nan
-        self.wLast = "--"
-        self.wCloses = []
-        self.fbEn = np.nan
-        self.wPendingSide = ""
-        self.wPendingStrike = 0.0
-        self.wPendingExpiry = ""
-        self.wPendingLots = 0
-        self.wPendingPlus = ""
-        self.wPendingAdx = np.nan
-        self.wPendingSc = np.nan
-        self.wPendingProbCE = 50.0
-        self.wPendingProbPE = 50.0
+        self.wSt = 0; self.wBar = 0; self.wSigC = np.nan; self.wSl = np.nan; self.wExt = np.nan
+        self.wLast = "--"; self.wCloses = []; self.fbEn = np.nan
+        self.wPendingSide = ""; self.wPendingStrike = 0.0; self.wPendingExpiry = ""
+        self.wPendingLots = 0; self.wPendingPlus = ""; self.wPendingAdx = np.nan
+        self.wPendingSc = np.nan; self.wPendingProbCE = 50.0; self.wPendingProbPE = 50.0
 
-        self.events = []
-        self.hist = []
-        self.lastSigT = None
-        self.lastSigTx = ""
-        self.lastSigBar = 0
-        self.dirSince = None
-        self.dirSinceBar = 0
-        self._prevDir = 0
+        self.events = []; self.hist = []
+        self.lastSigT = None; self.lastSigTx = ""; self.lastSigBar = 0
+        self.dirSince = None; self.dirSinceBar = 0; self._prevDir = 0
         self.wCE = self.lCE = self.wPE = self.lPE = 0
-        self.tCE = self.tPE = 0.0
-        self.gpCE = self.glCE = self.gpPE = self.glPE = 0.0
-        self.jRows = []
-        self.jFirst = None
+        self.tCE = self.tPE = 0.0; self.gpCE = self.glCE = self.gpPE = self.glPE = 0.0
+        self.jRows = []; self.jFirst = None
         self.ph = {k: dict(n=0, w=0, g=0.0, l=0.0, q=0.0) for k in ("1C", "1P", "2C", "2P")}
-        self.maxConsL = 0
-        self._curL = 0
-        self.mMaeW = 0.0
-        self.sMaeW = 0.0
-        self.sMfe = 0.0
-        self.fbN = self.fbW = 0
-        self.fbGp = self.fbGl = self.fbT = self.fbOrg = 0.0
-        self.noN = 0
-        self.noT = 0.0
-        self.wNsig = self.wNfin = self.wNcan = 0
-        self.optEnPrem = np.nan
-        self.last_o = None
-        self.last_vp = None
-        self._fb_now = 0
+        self.maxConsL = 0; self._curL = 0; self.mMaeW = 0.0; self.sMaeW = 0.0; self.sMfe = 0.0
+        self.fbN = self.fbW = 0; self.fbGp = self.fbGl = self.fbT = self.fbOrg = 0.0
+        self.noN = 0; self.noT = 0.0; self.wNsig = self.wNfin = self.wNcan = 0
+        self.optEnPrem = np.nan; self.last_o = None; self.last_vp = None; self._fb_now = 0
 
     @property
-    def bar_idx(self):
-        return self.bar_index
-
+    def bar_idx(self): return self.bar_index
     @property
-    def lg(self):
-        return self.logs
+    def lg(self): return self.logs
 
     def _dash_stats(self, exit_ts, exit_px, exit_reason, pnl, sgn, mae, mfe, fb_pnl):
         win = pnl > 0
@@ -1399,15 +1139,13 @@ class NiftyOptionProEngine:
 
         had_fb = not np.isnan(self.fbEn)
         if had_fb:
-            self.fbN += 1
-            self.fbOrg += pnl
+            self.fbN += 1; self.fbOrg += pnl
             if not np.isnan(fb_pnl):
                 self.fbT += fb_pnl
                 if fb_pnl > 0: self.fbW += 1; self.fbGp += fb_pnl
                 else: self.fbGl += abs(fb_pnl)
         else:
-            self.noN += 1
-            self.noT += pnl
+            self.noN += 1; self.noT += pnl
 
         ent_t = self.entT if self.entT is not None else exit_ts
         if self.jFirst is None: self.jFirst = ent_t
@@ -1422,8 +1160,7 @@ class NiftyOptionProEngine:
                 ph["n"] += 1; ph["q"] += pnl
                 if win: ph["w"] += 1; ph["g"] += pnl
                 else: ph["l"] += abs(pnl)
-        except Exception:
-            pass
+        except Exception: pass
 
         dip = abs(self.wSigC - self.wExt) if (had_fb and not np.isnan(self.wSigC) and not np.isnan(self.wExt)) else np.nan
         row = f"{self.entTx} {pd.Timestamp(ent_t):%d/%m %H:%M} {exit_reason} {pnl:+.1f}p M{mae:.0f} F{mfe:.0f}"
@@ -1440,21 +1177,14 @@ class NiftyOptionProEngine:
 
     def _dash_capture(self, L):
         t5, t3, t15, t1h, t4h = L["t5"], L["t3"], L["t15"], L["t1h"], L["t4h"]
-        br = L["br"]
-        close = L["close"]
-        bar_ts = L["bar_ts"]
-        oc = L.get("oc_data") or {}
-        step = PARAMS["optStep"]
-        posOn = self.posSt != 0
-        mDir = L["mDir"]
+        br = L["br"]; close = L["close"]; bar_ts = L["bar_ts"]
+        oc = L.get("oc_data") or {}; step = PARAMS["optStep"]
+        posOn = self.posSt != 0; mDir = L["mDir"]
         entCE, entPE = L["entCE"], L["entPE"]
         score, hasBr = L["score"], L["hasBr"]
         callEff, putEff = L["callEff"], L["putEff"]
-        atmNow = L["atmNow"]
-        oc_span = L["oc_span"]
-        ov_span = L["ov_span"]
-        nan = np.nan
-        s_txt = lambda x: "CE" if x == 1 else ("PE" if x == -1 else "-")
+        atmNow = L["atmNow"]; oc_span = L["oc_span"]; ov_span = L["ov_span"]
+        nan = np.nan; s_txt = lambda x: "CE" if x == 1 else ("PE" if x == -1 else "-")
 
         if entCE: act = "BUY CE"
         elif entPE: act = "BUY PE"
@@ -1468,8 +1198,7 @@ class NiftyOptionProEngine:
             shOn, shEn, shSl, shT1, shT2 = True, self.posEn, self.posSl, self.posT1, self.posT2
         elif self.wSt != 0 and not np.isnan(self.wSigC):
             slD = L["slD"]
-            shOn = True
-            shEn, shSl = self.wSigC, self.wSl
+            shOn = True; shEn, shSl = self.wSigC, self.wSl
             shT1 = self.wSigC + self.wSt * slD * PARAMS["rrT"]
             shT2 = self.wSigC + self.wSt * slD * (PARAMS["rrT"] + 1.0)
         else:
@@ -1501,8 +1230,7 @@ class NiftyOptionProEngine:
         if ocOk: ocStatus = f"Chain OK ({oc.get('ocCnt', 0)} pts, +-{oc_span})"
         elif PARAMS["pcrIn"] > 0 or PARAMS["callWall"] > 0 or PARAMS["putWall"] > 0: ocStatus = "Manual settings se"
         else: ocStatus = "Chain data nahi"
-        volPcrVal = L["volPcrVal"]
-        volOk_pcr = L["volOk_pcr"]
+        volPcrVal = L["volPcrVal"]; volOk_pcr = L["volOk_pcr"]
         vol_sig = oc.get("volSig", 0.0) if volOk_pcr else 0.0
 
         dgS1, dgS2, dgUp, dgDn = L["dgS1"], L["dgS2"], L["dgUp"], L["dgDn"]
@@ -1601,8 +1329,7 @@ class NiftyOptionProEngine:
                 self.real_trade_count = len(df_ex)
                 if "OrderPlaced" in df_ex.columns:
                     self.real_live_orders_sent = int(df_ex["OrderPlaced"].sum())
-            except Exception:
-                pass
+            except Exception: pass
 
     def _log_real_trade_entry(self, bar_ts: dt.datetime, side: str, strike: float, expiry: str, lots: int, spot_px: float, prob: float, order_sent: bool):
         if self.is_backtest: return
@@ -1656,27 +1383,21 @@ class NiftyOptionProEngine:
         side_str = "CE" if self.posSt == 1 else "PE"
         rem_ratio = (self.remainingLots / self.activeLots) if self.activeLots > 0 else 1.0
         final_pnl = self.realizedTradePnl + sgn * (current_price - self.posEn) * rem_ratio
-
         if self.remainingLots > 0:
             self.broker.place_option_order(side_str, self.activeStrike, self.remainingLots, action="SELL", expiry_date=self.activeExpiry)
-
         self._record_closed_trade(bar_ts, current_price, reason, final_pnl)
         self.posSt = 0; self.posMv = False; self.t1Booked = False
-        self.remainingLots = 0; self.realizedTradePnl = 0.0
-        self.lastExit = self.bar_index
+        self.remainingLots = 0; self.realizedTradePnl = 0.0; self.lastExit = self.bar_index
 
     def _record_closed_trade(self, exit_ts: dt.datetime, exit_px: float, exit_reason: str, pnl_pts: float):
         sgn = 1 if self.posSt == 1 else -1
         mae = (self.posEn - self.tkLo) if sgn == 1 else (self.tkHi - self.posEn)
         mfe = (self.tkHi - self.posEn) if sgn == 1 else (self.posEn - self.tkLo)
-
         if pnl_pts > 0: self.winN += 1; self.gp += pnl_pts
         else: self.lossN += 1; self.gl += abs(pnl_pts)
-
         self.totPnl += pnl_pts; self.eqC += pnl_pts
         self.eqPk = max(self.eqPk, self.eqC)
         self.maxDD = max(self.maxDD, self.eqPk - self.eqC)
-
         fb_pnl = (sgn * (exit_px - self.fbEn)) if not np.isnan(self.fbEn) else np.nan
         ent_prob = self.entProbCE if sgn == 1 else self.entProbPE
         self.trade_journal.append({
@@ -1689,7 +1410,6 @@ class NiftyOptionProEngine:
             "ADX": round(self.entAdx, 1) if not np.isnan(self.entAdx) else 0,
             "Breadth": round(self.entSc, 1) if not np.isnan(self.entSc) else 0,
         })
-
         self._dash_stats(exit_ts, exit_px, exit_reason, pnl_pts, sgn, mae, mfe, fb_pnl)
         self._log_real_trade_exit(exit_ts, exit_px, exit_reason, pnl_pts)
         log_line = f"{self.entTx} {self.entT.strftime('%d/%m %H:%M')} {exit_reason} {pnl_pts:+.1f}p P:{ent_prob:.0f}% A{self.entAdx:.0f} B{self.entSc:.0f}"
@@ -1701,15 +1421,12 @@ class NiftyOptionProEngine:
         ema9 = calc_ema(c_s, 9); ema21 = calc_ema(c_s, 21); ema50 = calc_ema(c_s, 50)
         rsi = calc_rsi(c_s, 14); sdir = calc_supertrend(df, 3.0, 10); vw = calc_vwap(df)
         diPl, diMi, adxV = calc_dmi(df, PARAMS["adxLen"])
-
         c = c_s.iloc[-1]
         e9, e21, e50 = ema9.iloc[-1], ema21.iloc[-1], ema50.iloc[-1]
         r = rsi.iloc[-1]; sd = sdir.iloc[-1]; v = vw.iloc[-1]
         vwOk = (not np.isnan(v)) and v > 0
-
         bull = (1 if (e9 > e21 and c > e50) else 0) + (1 if (vwOk and c > v) else 0) + (1 if sd < 0 else 0) + (1 if r > 55 else 0)
         bear = (1 if (e9 < e21 and c < e50) else 0) + (1 if (vwOk and c < v) else 0) + (1 if sd > 0 else 0) + (1 if r < 45 else 0)
-
         orTxt = "N/A"; orH = orL = np.nan; orDone = False
         if is_5m:
             today = df.index[-1].date()
@@ -1726,11 +1443,9 @@ class NiftyOptionProEngine:
         else:
             maxC = 3 + (1 if vwOk else 0)
             needE = min(PARAMS["mtfNeed"], maxC)
-
         side = 1 if (bull >= needE and bull > bear) else (-1 if (bear >= needE and bear > bull) else 0)
         arN = PARAMS["arN"]
         adx_prev = adxV.iloc[-1 - arN] if len(adxV) > arN else np.nan
-
         return {
             "side": side, "bull": bull, "bear": bear, "maxC": maxC, "needE": needE,
             "close": c, "ema9": e9, "ema21": e21, "ema50": e50, "rsi": r, "sdir": sd,
@@ -1742,12 +1457,10 @@ class NiftyOptionProEngine:
         wTot = wUp = wDn = wCt = 0.0
         w10Tot = w10Up = w10Dn = 0.0
         nUpC = nDnC = nOkC = 0
-
         sec_ws = {k: 0.0 for k in SECTOR_MAP}
         sec_wg = {k: 0.0 for k in SECTOR_MAP}
         sec_cn = {k: 0 for k in SECTOR_MAP}
         bkW = bkG = 0.0; bkN = 0
-
         for idx, (sym, wt) in enumerate(BREADTH_STOCKS):
             g = changes.get(sym, np.nan)
             if not np.isnan(g):
@@ -1764,32 +1477,25 @@ class NiftyOptionProEngine:
                             sec_ws[sname] += wt; sec_wg[sname] += wt * g; sec_cn[sname] += 1
                     if sym in BANK_STOCKS:
                         bkW += wt; bkG += wt * g; bkN += 1
-
         upPct = (wUp / wTot * 100.0) if wTot > 0 else np.nan
         dnPct = (wDn / wTot * 100.0) if wTot > 0 else np.nan
         up10Pct = (w10Up / w10Tot * 100.0) if w10Tot > 0 else np.nan
         cntPct = (nUpC / (nUpC + nDnC) * 100.0) if (nUpC + nDnC) > 0 else 50.0
         impl = (wCt / wTot) if wTot > 0 else np.nan
         implPct = np.clip(50.0 + impl / PARAMS["implRef"] * 50.0, 0.0, 100.0) if not np.isnan(impl) else np.nan
-
         score = (upPct * 0.45 + up10Pct * 0.25 + cntPct * 0.10 + implPct * 0.20) if not np.isnan(upPct) else np.nan
         aligned = (not np.isnan(score)) and ((upPct > 50 and up10Pct > 50 and cntPct > 50) or (upPct < 50 and up10Pct < 50 and cntPct < 50))
         bullHi = (not np.isnan(score)) and score >= PARAMS["hiTh"] and aligned
         bearHi = (not np.isnan(score)) and score <= (100.0 - PARAMS["hiTh"]) and aligned
-
         brTxt = "NO DATA" if np.isnan(score) else ("CE HIGH" if bullHi else ("PE HIGH" if bearHi else ("CE medium" if score >= 55 else ("PE medium" if score <= 45 else "NO TRADE"))))
-
         sec_avg = {k: (sec_wg[k] / sec_ws[k]) if (sec_cn[k] > 0 and sec_ws[k] > 0) else np.nan for k in SECTOR_MAP}
         scBk = (bkG / bkW) if (bkN > 0 and bkW > 0) else np.nan
         scValid = sum(1 for v in sec_avg.values() if not np.isnan(v))
-
         h0, h1, h2 = sec_avg["Financial Svc"], sec_avg["Oil & Gas"], sec_avg["IT"]
         scUpN = sum(1 for v in (h0, h1, h2) if not np.isnan(v) and v >= PARAMS["scTh"])
         scDnN = sum(1 for v in (h0, h1, h2) if not np.isnan(v) and v <= -PARAMS["scTh"])
-
         scCE = (not PARAMS["scFeed"]) or (scValid == 0) or (scUpN >= PARAMS["scNeed"] and (not PARAMS["scBankOk"] or np.isnan(scBk) or scBk > -PARAMS["scTh"]))
         scPE = (not PARAMS["scFeed"]) or (scValid == 0) or (scDnN >= PARAMS["scNeed"] and (not PARAMS["scBankOk"] or np.isnan(scBk) or scBk < PARAMS["scTh"]))
-
         return {
             "score": score, "brTxt": brTxt, "bullHi": bullHi, "bearHi": bearHi,
             "upPct": upPct, "dnPct": dnPct, "nUpC": nUpC, "nDnC": nDnC, "impl": impl,
@@ -1805,11 +1511,9 @@ class NiftyOptionProEngine:
         vol_norm = np.clip((vol_pcr - 1.0) / 0.40, -1.0, 1.0) if not np.isnan(vol_pcr) else 0.0
         fut_norm = np.clip(fut_s, -1.0, 1.0) if PARAMS["futOiOn"] else 0.0
         br_norm = np.clip((breadth_score - 50.0) / 30.0, -1.0, 1.0) if not np.isnan(breadth_score) else 0.0
-
         raw_bias = (oi_norm * 0.30) + (vol_norm * 0.25) + (fut_norm * 0.25) + (br_norm * 0.20)
         prob_ce = float(np.clip(50.0 + raw_bias * 50.0, 0.0, 100.0))
         prob_pe = float(np.clip(50.0 - raw_bias * 50.0, 0.0, 100.0))
-
         if near_call: prob_ce = max(0.0, prob_ce - 20.0)
         if near_put: prob_pe = max(0.0, prob_pe - 20.0)
         return prob_ce, prob_pe
@@ -1818,29 +1522,21 @@ class NiftyOptionProEngine:
         if not is_pre_alert: self.bar_index += 1
         bar_ts = df_5m.index[-1]
         if not is_pre_alert: self._fb_now = 0
-
         t5 = self.eval_timeframe(df_5m, is_5m=True)
         t3 = self.eval_timeframe(df_3m)
         t15 = self.eval_timeframe(df_15m)
         t1h = self.eval_timeframe(df_1h)
         t4h = self.eval_timeframe(df_4h)
-
-        close = t5["close"]
-        high = df_5m["high"].iloc[-1]
-        low = df_5m["low"].iloc[-1]
-        open_p = df_5m["open"].iloc[-1]
-        atr10 = calc_atr(df_5m, 10).iloc[-1]
-        vol = df_5m["volume"].iloc[-1]
+        close = t5["close"]; high = df_5m["high"].iloc[-1]; low = df_5m["low"].iloc[-1]; open_p = df_5m["open"].iloc[-1]
+        atr10 = calc_atr(df_5m, 10).iloc[-1]; vol = df_5m["volume"].iloc[-1]
         volAvg = calc_sma(df_5m["volume"], 20).iloc[-1]
         volOk = (not np.isnan(vol)) and vol > 0 and (not np.isnan(volAvg)) and volAvg > 0
 
         if not is_pre_alert and self.posSt != 0:
-            self.tkLo = min(self.tkLo, low)
-            self.tkHi = max(self.tkHi, high)
+            self.tkLo = min(self.tkLo, low); self.tkHi = max(self.tkHi, high)
 
         inWin = in_session(bar_ts, PARAMS["sess_start"], PARAMS["sess_end"])
         techSide = t5["side"] if inWin else 0
-
         mtfAgree = (techSide != 0) and (t3["side"] == techSide) and (not PARAMS["mtf15Req"] or t15["side"] == techSide)
         techF = (techSide if mtfAgree else 0) if PARAMS["mtfOn"] else techSide
         mDir = techF
@@ -1869,17 +1565,13 @@ class NiftyOptionProEngine:
         dgM1, dgM1p = sma20_d.iloc[-1 - d1], sma20_d.iloc[-2 - d1]
         dgM2, dgM2p = sma20_d.iloc[-1 - d2], sma20_d.iloc[-2 - d2]
         dgYL, dgYM, dgYH = df_d["low"].iloc[-2], sma20_d.iloc[-2], df_d["high"].iloc[-2]
-
-        dgS1 = (dgM1 - dgM1p) / dgM1p * 100.0
-        dgS2 = (dgM2 - dgM2p) / dgM2p * 100.0
+        dgS1 = (dgM1 - dgM1p) / dgM1p * 100.0; dgS2 = (dgM2 - dgM2p) / dgM2p * 100.0
         dgUp = dgS1 > PARAMS["dgFlat"] and dgS2 > PARAMS["dgFlat"]
         dgDn = dgS1 < -PARAMS["dgFlat"] and dgS2 < -PARAMS["dgFlat"]
         dgCE = (not PARAMS["dgOn"]) or (PARAMS["dgMode"] == "Sirf PE par") or dgUp
         dgPE = (not PARAMS["dgOn"]) or (PARAMS["dgMode"] == "Sirf CE par") or dgDn
 
-        oiLook = PARAMS["oiLook"]
-        futS = 0.0
-        futTxt = "OFF" if not PARAMS["futOiOn"] else "N/A (OI data nahi)"
+        oiLook = PARAMS["oiLook"]; futS = 0.0; futTxt = "OFF" if not PARAMS["futOiOn"] else "N/A (OI data nahi)"
         if PARAMS["futOiOn"] and len(df_fut) > oiLook:
             pxCh = df_fut["close"].iloc[-1] - df_fut["close"].iloc[-1 - oiLook]
             oiCh = df_fut["oi"].iloc[-1] - df_fut["oi"].iloc[-1 - oiLook]
@@ -1888,15 +1580,10 @@ class NiftyOptionProEngine:
                 futTxt = "Long Buildup (+1)" if futS == 1.0 else ("Short Covering (+0.5)" if futS == 0.5 else ("Short Buildup (-1)" if futS == -1.0 else "Long Unwinding (-0.5)"))
 
         atmNow = round(close / PARAMS["optStep"]) * PARAMS["optStep"]
-        strikeCE = get_trade_strike(close, "CE")
-        strikePE = get_trade_strike(close, "PE")
+        strikeCE = get_trade_strike(close, "CE"); strikePE = get_trade_strike(close, "PE")
         selected_exp = oc_data.get("expiry", "") or (self.broker.get_selected_expiry() if not self.is_backtest else "BT_EXP")
-
         if self.ovCtr is None and atmNow > 0: self.ovCtr = atmNow
-
-        oc_span = clamp_strike_span(PARAMS["ocN"])
-        ov_span = clamp_strike_span(PARAMS["ovN"])
-
+        oc_span = clamp_strike_span(PARAMS["ocN"]); ov_span = clamp_strike_span(PARAMS["ovN"])
         ocOk = PARAMS["autoOc"] and oc_data.get("ocOk", False)
         volOk_pcr = PARAMS["ovOn"] and oc_data.get("volOk", False)
         ovUseF = volOk_pcr and PARAMS["ovFeed"]
@@ -1927,9 +1614,7 @@ class NiftyOptionProEngine:
         oiOkPE = (not nearPut) and (oiScore < 1)
 
         br = self.eval_breadth_and_sectors(stock_changes)
-        score = br["score"]
-        hasBr = not np.isnan(score)
-
+        score = br["score"]; hasBr = not np.isnan(score)
         probCE, probPE = self.calc_oi_and_vol_probability(ocPcrVal, volPcrVal, futS, nearCall, nearPut, score)
 
         if not inWin: fin = "OFF TIME"
@@ -1957,8 +1642,7 @@ class NiftyOptionProEngine:
         probOkCE = (not PARAMS["oiProbFilterOn"]) or (probCE >= PARAMS["minOiProbCE"])
         probOkPE = (not PARAMS["oiProbFilterOn"]) or (probPE >= PARAMS["minOiProbPE"])
 
-        rng5 = high - low
-        cpos = ((close - low) / rng5) if rng5 > 0 else 0.5
+        rng5 = high - low; cpos = ((close - low) / rng5) if rng5 > 0 else 0.5
         tmBlkR = (in_session(bar_ts, *PARAMS["tmS1"]) or in_session(bar_ts, *PARAMS["tmS2"]) or in_session(bar_ts, *PARAMS["tmS3"]))
         exBlkR = (bar_ts.weekday() == DOW_MAP[PARAMS["exDay"]])
 
@@ -1975,7 +1659,6 @@ class NiftyOptionProEngine:
         pdlNear = (0 <= (close - dgYL) / close * 100.0 <= PARAMS["lvlBuf"])
         rdUpNear = (math.ceil(close / PARAMS["rdStep"]) * PARAMS["rdStep"] - close) <= PARAMS["rdPts"]
         rdDnNear = (close - math.floor(close / PARAMS["rdStep"]) * PARAMS["rdStep"]) <= PARAMS["rdPts"]
-
         today_open = df_5m[df_5m.index.date == bar_ts.date()]["open"].iloc[0]
         rawOpCE = close > today_open
 
@@ -1993,8 +1676,7 @@ class NiftyOptionProEngine:
         grade_str = f"CE:{'A' if gdCE>=PARAMS['gdA'] else ('B' if gdCE>=PARAMS['gdB'] else 'C')}({gdCE}/9) | PE:{'A' if gdPE>=PARAMS['gdA'] else ('B' if gdPE>=PARAMS['gdB'] else 'C')}({gdPE}/9)"
 
         coolOk = (self.bar_index - self.lastExit) >= PARAMS["coolBars"]
-        stCE = t5["sdir"] < 0
-        stPE = t5["sdir"] > 0
+        stCE = t5["sdir"] < 0; stPE = t5["sdir"] > 0
         extOk = abs(close - t5["ema21"]) <= atr10 * PARAMS["extMult"]
 
         peHtfOk = (PARAMS["peHtf"] == "OFF") or (t1h["side"] == -1 if PARAMS["peHtf"] == "1h PE" else (t1h["side"] == -1 and t4h["side"] == -1))
@@ -2071,10 +1753,8 @@ class NiftyOptionProEngine:
             rem_ratio = (self.remainingLots / self.activeLots) if self.activeLots > 0 else 1.0
             total_trade_pnl = self.realizedTradePnl + sgn * (exPx - self.posEn) * rem_ratio
             side_str = "CE" if self.posSt == 1 else "PE"
-
             if self.remainingLots > 0:
                 self.broker.place_option_order(side_str, self.activeStrike, self.remainingLots, action="SELL", expiry_date=self.activeExpiry)
-
             self._record_closed_trade(bar_ts, exPx, exRes, total_trade_pnl)
             self.posSt = 0; self.posMv = False; self.t1Booked = False
             self.realizedTradePnl = 0.0; self.lastExit = self.bar_index
@@ -2094,7 +1774,7 @@ class NiftyOptionProEngine:
         elif (sigCE and not diOkCE) or (sigPE and not diOkCE): why = f"DI/ADX filter ({PARAMS['diNeed']} of 3 TF)"
         elif (sigCE and not dgCE) or (sigPE and not dgCE): why = f"Daily gate 7d:{dgS1:+.2f}% 5d:{dgS2:+.2f}%"
         elif sigPE and dgPE and not peScOk: why = f"PE score {peScore}/5 (need {PARAMS['peScMin']})"
-        elif (sigCE and not br["scCE"]) or (sigPE and not br["scPE"]): why = "Sector signal ke khilaf"
+        elif (sigCE and not br["scCE"]) or (sigPE and not br["scCE"]): why = "Sector signal ke khilaf"
         elif not v22CE or not v22PE: why = "v22 filter block"
         else: why = "Signal OK"
 
@@ -2105,8 +1785,7 @@ class NiftyOptionProEngine:
 
         fb_msg = "-- | " + self.wLast
         if entCE or entPE:
-            lvS = 1 if entCE else -1
-            side_lbl = "CE" if entCE else "PE"
+            lvS = 1 if entCE else -1; side_lbl = "CE" if entCE else "PE"
             arrow_icon = "[GREEN ARROW]" if entCE else "[RED ARROW]"
             ent_prob = probCE if entCE else probPE
             chosen_strike = strikeCE if entCE else strikePE
@@ -2150,7 +1829,6 @@ class NiftyOptionProEngine:
         elif PARAMS["wfOn"] and self.wSt != 0:
             self.wExt = min(self.wExt, low) if self.wSt == 1 else max(self.wExt, high)
             self.wCloses.append(close)
-
             wTouch = ((low <= self.wSl if PARAMS["wfWick"] else close <= self.wSl) if self.wSt == 1
                       else (high >= self.wSl if PARAMS["wfWick"] else close >= self.wSl))
             wGone = (self.posSt == 0) and not (self.is_backtest and self.bt_entry_mode == "REAL_BLUE_ONLY")
@@ -2167,11 +1845,9 @@ class NiftyOptionProEngine:
                 wCrvP = (self.wExt - self.wSigC >= PARAMS["wfDip"] * atr10) and (high > low) and (close < open_p or (high - max(open_p, close)) >= PARAMS["wfWk"] / 100.0 * (high - low))
                 wCrvEC = (self.wExt < self.wSigC) and (close > open_p) and (close > self.wCloses[-2])
                 wCrvEP = (self.wExt > self.wSigC) and (close < open_p) and (close < self.wCloses[-2])
-
                 wUpTh = PARAMS["wfUpPts"] if PARAMS["wfUpPts"] > 0 else PARAMS["wfUp"] * atr10
                 wUpC = (wUpTh > 0) and (self.bar_index - self.wBar >= 2) and (close > open_p) and (close >= self.wSigC + wUpTh)
                 wUpP = (wUpTh > 0) and (self.bar_index - self.wBar >= 2) and (close < open_p) and (close <= self.wSigC - wUpTh)
-
                 smaF = pd.Series(self.wCloses).rolling(PARAMS["wfF"]).mean().iloc[-1] if len(self.wCloses) >= PARAMS["wfF"] else np.mean(self.wCloses)
                 smaS = pd.Series(self.wCloses).rolling(PARAMS["wfS"]).mean().iloc[-1] if len(self.wCloses) >= PARAMS["wfS"] else np.mean(self.wCloses)
 
@@ -2182,8 +1858,7 @@ class NiftyOptionProEngine:
 
                 if raw_ok and (self.bar_index - self.wBar >= PARAMS["wfMin"]):
                     fb_side = "CE" if self.wSt == 1 else "PE"
-                    lvS = self.wSt
-                    pts = lvS * (close - self.wSigC)
+                    lvS = self.wSt; pts = lvS * (close - self.wSigC)
                     ent_prob = self.wPendingProbCE if lvS == 1 else self.wPendingProbPE
                     self.wLast = "FINAL BUY"; self.fbEn = close; self.wNfin += 1; self._fb_now = lvS
                     self.events.append(dict(t=bar_ts, k="FINAL BUY " + fb_side, text=f"{pts:+.0f}p"))
@@ -2207,7 +1882,6 @@ class NiftyOptionProEngine:
 
                     order_ok = self.broker.place_option_order(fb_side, self.activeStrike, self.activeLots, action="BUY", expiry_date=self.activeExpiry)
                     self._log_real_trade_entry(bar_ts, fb_side, self.activeStrike, self.activeExpiry, self.activeLots, close, ent_prob, order_ok)
-
                     self.alert(
                         f"[BLUE ARROW] STEP 2: FINAL BUY {fb_side} CONFIRMED @ {close:.1f} ({pts:+.1f}p) | Prob: {ent_prob:.0f}%\n"
                         f"REAL TRADE #{self.real_trade_count} | NIFTY [{self.activeExpiry}] {int(self.activeStrike)} {fb_side} ({PARAMS['strikeMode']}) | Lots: {self.activeLots}\n"
@@ -2219,34 +1893,15 @@ class NiftyOptionProEngine:
 
         self.armCE = (self.armCE and not entCE) if sigCE else True
         self.armPE = (self.armPE and not entPE) if sigPE else True
-
         self._dash_capture(locals())
-
-        if not self.is_backtest:
-            s_txt = lambda x: "CE" if x == 1 else ("PE" if x == -1 else "-")
-            print("=" * 82)
-            print(f"NIFTY OPT PRO v28 (5m) | {bar_ts.strftime('%Y-%m-%d %H:%M IST')} | LTP: {close:.2f}")
-            print(f"REAL TRADES TAKEN: {self.real_trade_count} (Live Broker Orders: {self.real_live_orders_sent}) | Strike: {PARAMS['strikeMode']} | Exp: {selected_exp} | Exit: {exit_mode}")
-            print(f"MTF 3m/5m/15m: {s_txt(t3['side'])} / {s_txt(t5['side'])} / {s_txt(t15['side'])} | 1h/4h: {s_txt(t1h['side'])} / {s_txt(t4h['side'])}")
-            print(f"Signal: {fin} {plusTxt} | Breadth: {score:.0f} ({br['brTxt']}) | Grade: {grade_str}")
-            print(f"OI+VOL PROBABILITY: CE {probCE:.0f}% | PE {probPE:.0f}% (Filter: {'ON' if PARAMS['oiProbFilterOn'] else 'OFF'})")
-            print(f"Option OI (+-{oc_span} strk): {ocPcrVal:.2f} (S:{putEff:.0f} R:{callEff:.0f}) | VOL PCR (+-{ov_span} strk): {volPcrVal:.2f} | Fut OI: {futTxt}")
-            print(f"WATCH / FINAL: {fb_msg}")
-            if self.posSt != 0:
-                print(f"ACTIVE POSITION: {int(self.activeStrike)} {'CE' if self.posSt==1 else 'PE'} [{self.activeExpiry}] | Entry: {self.posEn:.1f} | SL: {self.posSl:.1f} | T1: {self.posT1:.1f} | T2: {self.posT2:.1f} | RemLots: {self.remainingLots}/{self.activeLots}")
-            print(f"ADX(14): {t5['adx']:.1f} (D+:{t5['diPl']:.0f} D-:{t5['diMi']:.0f}) | OR: {t5['orTxt']} | Kyu nahi?: {why}")
-            print(f"Lots: {lots} | Session Log W/L: {self.winN}/{self.lossN} ({self.totPnl:+.1f}p)")
-            print("=" * 82)
 
     def process_live_bar(self, is_pre_alert: bool = False):
         now_ist = dt.datetime.now(IST)
         main_sym = CONFIG["CHART_SYMBOL"]
-
         df_5m = self.broker.get_candles(main_sym, interval="5", days=7)
         if df_5m.empty or len(df_5m) < 60: return
         if not is_pre_alert and df_5m.index[-1] > now_ist - dt.timedelta(minutes=5):
             df_5m = df_5m.iloc[:-1]
-
         df_3m = self.broker.get_candles(main_sym, interval="3", days=5)
         df_15m = self.broker.get_candles(main_sym, interval="15", days=10)
         df_1h = self.broker.get_candles(main_sym, interval="60", days=20)
@@ -2258,23 +1913,16 @@ class NiftyOptionProEngine:
         close = df_5m["close"].iloc[-1]
         atmNow = round(close / PARAMS["optStep"]) * PARAMS["optStep"]
         if self.ovCtr is None and atmNow > 0: self.ovCtr = atmNow
-
         oc_data = self.broker.get_option_chain_metrics(
             atmNow, self.ovCtr, PARAMS["ocN"], PARAMS["ovN"]
         ) if (PARAMS["autoOc"] or PARAMS["ovOn"]) else {}
-
         stock_changes = self.broker.get_breadth_changes()
         self.evaluate_bar_data(df_5m, df_3m, df_15m, df_1h, df_4h, df_d, df_fut, df_vix, stock_changes, oc_data, is_pre_alert=is_pre_alert)
         self.render_dashboard()
 
-# ==============================================================================
-# 6. HISTORICAL BACKTEST RUNNER
-# ==============================================================================
 def run_backtest(broker: BrokerConnector, days: int = 30):
     bt_type = CONFIG.get("BACKTEST_ENTRY_TYPE", "BOTH").upper()
-    print(f"\nFetching Historical Data ({days} days) for Backtest | Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']}...")
     main_sym = CONFIG["CHART_SYMBOL"]
-
     df_5m = broker.get_candles(main_sym, interval="5", days=days + 10)
     df_3m = broker.get_candles(main_sym, interval="3", days=days + 10)
     df_15m = broker.get_candles(main_sym, interval="15", days=days + 15)
@@ -2283,47 +1931,25 @@ def run_backtest(broker: BrokerConnector, days: int = 30):
     df_d = broker.get_candles(main_sym, interval="D", days=days + 60)
     df_fut = broker.get_candles("NIFTY_FUT", interval="5", days=days + 10)
     df_vix = broker.get_candles("INDIAVIX", interval="5", days=days + 10)
-
-    if df_5m.empty or len(df_5m) < 100:
-        print("Backtest ke liye paryapt historical data nahi mila.")
-        return
-
+    if df_5m.empty or len(df_5m) < 100: return
     stock_daily = {}
     for sym, _ in BREADTH_STOCKS:
         d_s = broker.get_candles(sym, interval="D", days=days + 15)
         if not d_s.empty:
             d_s["pct"] = d_s["close"].pct_change() * 100.0
             stock_daily[sym] = d_s["pct"]
-
     modes_to_run = ["ALL_SIGNALS", "REAL_BLUE_ONLY"] if bt_type == "BOTH" else [bt_type]
-
     for mode_label in modes_to_run:
         engine = NiftyOptionProEngine(broker, is_backtest=True, bt_entry_mode=mode_label)
-        oc_bt = {
-            "expiry": PARAMS["expiryMode"],
-            "ocOk": PARAMS["pcrIn"] > 0,
-            "ocPcr": PARAMS["pcrIn"] if PARAMS["pcrIn"] > 0 else np.nan,
-            "ocCallK": PARAMS["callWall"] if PARAMS["callWall"] > 0 else np.nan,
-            "ocPutK": PARAMS["putWall"] if PARAMS["putWall"] > 0 else np.nan,
-            "volOk": False, "volPcr": np.nan, "volSig": 0.0
-        }
-
+        oc_bt = {"expiry": PARAMS["expiryMode"], "ocOk": PARAMS["pcrIn"] > 0, "ocPcr": PARAMS["pcrIn"] if PARAMS["pcrIn"] > 0 else np.nan, "ocCallK": PARAMS["callWall"] if PARAMS["callWall"] > 0 else np.nan, "ocPutK": PARAMS["putWall"] if PARAMS["putWall"] > 0 else np.nan, "volOk": False, "volPcr": np.nan, "volSig": 0.0}
         for i in range(60, len(df_5m)):
-            sub_5m = df_5m.iloc[:i + 1]
-            cur_ts = sub_5m.index[-1]
-            cur_date = cur_ts.date()
-
-            sub_3m = df_3m[df_3m.index <= cur_ts]
-            sub_15m = df_15m[df_15m.index <= cur_ts]
-            sub_1h = df_1h[df_1h.index <= cur_ts]
-            sub_4h = df_4h[df_4h.index <= cur_ts]
+            sub_5m = df_5m.iloc[:i + 1]; cur_ts = sub_5m.index[-1]; cur_date = cur_ts.date()
+            sub_3m = df_3m[df_3m.index <= cur_ts]; sub_15m = df_15m[df_15m.index <= cur_ts]
+            sub_1h = df_1h[df_1h.index <= cur_ts]; sub_4h = df_4h[df_4h.index <= cur_ts]
             sub_d = df_d[df_d.index.date <= cur_date]
             sub_fut = df_fut[df_fut.index <= cur_ts] if not df_fut.empty else pd.DataFrame()
             sub_vix = df_vix[df_vix.index <= cur_ts] if not df_vix.empty else pd.DataFrame()
-
-            if len(sub_d) < 30 or len(sub_3m) < 30 or len(sub_15m) < 30 or len(sub_1h) < 30 or len(sub_4h) < 30:
-                continue
-
+            if len(sub_d) < 30 or len(sub_3m) < 30 or len(sub_15m) < 30 or len(sub_1h) < 30 or len(sub_4h) < 30: continue
             changes = {}
             for sym, _ in BREADTH_STOCKS:
                 s_pct = stock_daily.get(sym)
@@ -2331,53 +1957,23 @@ def run_backtest(broker: BrokerConnector, days: int = 30):
                     valid = s_pct[s_pct.index.date <= cur_date]
                     changes[sym] = valid.iloc[-1] if not valid.empty else np.nan
                 else: changes[sym] = np.nan
-
             engine.evaluate_bar_data(sub_5m, sub_3m, sub_15m, sub_1h, sub_4h, sub_d, sub_fut, sub_vix, changes, oc_bt)
-
-        total_trades = engine.winN + engine.lossN
-        win_rate = (engine.winN / total_trades * 100.0) if total_trades > 0 else 0.0
-        pf = (engine.gp / engine.gl) if engine.gl > 0 else (float("inf") if engine.gp > 0 else 0.0)
-
-        title_tag = "REAL TRADE BACKTEST (BLUE ARROW FINAL BUY ONLY)" if mode_label == "REAL_BLUE_ONLY" else "INITIAL SIGNALS BACKTEST (GREEN/RED ARROW)"
-        print("\n" + "=" * 92)
-        print(f"{title_tag}")
-        print(f"Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']} | Total Trades: {total_trades}")
-        print(f"Wins: {engine.winN} | Losses: {engine.lossN} | Win%: {win_rate:.1f}% | Profit Factor: {pf:.2f}")
-        print(f"Total Net Points: {engine.totPnl:+.2f} pts | Max Drawdown: -{engine.maxDD:.2f} pts")
-        print("=" * 92)
-
         if engine.trade_journal:
             j_df = pd.DataFrame(engine.trade_journal)
-            print(j_df.to_string(index=False))
-            csv_name = f"backtest_{mode_label}_{PARAMS['strikeMode']}_{PARAMS['exitMode']}.csv"
-            j_df.to_csv(csv_name, index=False)
-            print(f"\nTrade Journal saved to: {csv_name}")
-
+            j_df.to_csv(f"backtest_{mode_label}_{PARAMS['strikeMode']}_{PARAMS['exitMode']}.csv", index=False)
         if CONFIG.get("DASH_ON", True):
-            dash_path = f"dashboard_backtest_{mode_label}.html"
-            engine.render_dashboard(dash_path)
-            print(f"Dashboard saved to: {dash_path}")
+            engine.render_dashboard(f"dashboard_backtest_{mode_label}.html")
 
-# ==============================================================================
-# 7. STREAMLIT DESKTOP WEB UI WRAPPER
-# ==============================================================================
 def run_streamlit_desktop_app():
     import streamlit as st
     import streamlit.components.v1 as components
-
-    st.set_page_config(
-        page_title="NIFTY OPTION SIGNAL PRO v28 - Desktop Dashboard",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-
+    st.set_page_config(page_title="NIFTY OPTION SIGNAL PRO v28 - Desktop Dashboard", layout="wide", initial_sidebar_state="expanded")
     st.title("NIFTY OPTION SIGNAL PRO v28 - Desktop Trading & Backtest Dashboard")
 
     with st.sidebar:
         st.header("1. Broker & API Credentials")
         broker_choice = st.selectbox("Select Broker", ["DHAN", "UPSTOX"], index=0 if CONFIG["BROKER"] == "DHAN" else 1)
         CONFIG["BROKER"] = broker_choice
-
         chart_sym = st.selectbox("Chart Symbol", ["NIFTY_SPOT", "NIFTY_FUT"], index=0 if CONFIG["CHART_SYMBOL"] == "NIFTY_SPOT" else 1)
         CONFIG["CHART_SYMBOL"] = chart_sym
 
@@ -2395,8 +1991,7 @@ def run_streamlit_desktop_app():
 
         tg_bot = st.text_input("Telegram Bot Token (Optional)", value=st.secrets.get("TELEGRAM_BOT_TOKEN", CONFIG["TELEGRAM_BOT_TOKEN"]), type="password")
         tg_chat = st.text_input("Telegram Chat ID (Optional)", value=st.secrets.get("TELEGRAM_CHAT_ID", CONFIG["TELEGRAM_CHAT_ID"]))
-        CONFIG["TELEGRAM_BOT_TOKEN"] = tg_bot.strip()
-        CONFIG["TELEGRAM_CHAT_ID"] = tg_chat.strip()
+        CONFIG["TELEGRAM_BOT_TOKEN"] = tg_bot.strip(); CONFIG["TELEGRAM_CHAT_ID"] = tg_chat.strip()
 
         st.header("2. Execution Mode & Order Settings")
         run_mode = st.radio("Select Mode", ["LIVE", "BACKTEST", "REAL_TRADE_REPORT"], index=0)
@@ -2405,8 +2000,8 @@ def run_streamlit_desktop_app():
         if run_mode == "LIVE":
             auto_order = st.checkbox("AUTO PLACE LIVE BROKER ORDER (Blue Arrow)?", value=CONFIG["AUTO_PLACE_ORDER"])
             CONFIG["AUTO_PLACE_ORDER"] = auto_order
-            if auto_order: st.error("LIVE ORDER EXECUTION ON: Real orders will be placed on broker!")
-            else: st.info("SAFE MODE: Only Alerts, Dashboard & Journal Logging (No real order).")
+            if auto_order: st.error("LIVE ORDER EXECUTION ON!")
+            else: st.info("SAFE MODE: Only Alerts & Dashboard.")
         elif run_mode == "BACKTEST":
             bt_days = st.number_input("Backtest Days", min_value=5, max_value=180, value=int(CONFIG["BACKTEST_DAYS"]))
             CONFIG["BACKTEST_DAYS"] = int(bt_days)
@@ -2418,7 +2013,6 @@ def run_streamlit_desktop_app():
         PARAMS["expiryMode"] = st.selectbox("Expiry Selection", ["CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"], index=["CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"].index(PARAMS["expiryMode"]))
         if PARAMS["expiryMode"] == "MANUAL":
             PARAMS["manualExpiry"] = st.text_input("Manual Expiry (YYYY-MM-DD)", value=PARAMS["manualExpiry"])
-
         PARAMS["exitMode"] = st.selectbox("Target Exit Mode", ["T1", "T2", "T1_T2", "MANUAL"], index=["T1", "T2", "T1_T2", "MANUAL"].index(PARAMS["exitMode"]))
         if PARAMS["exitMode"] == "T1_T2":
             PARAMS["t1ExitPct"] = st.slider("T1 Partial Exit %", min_value=10, max_value=90, value=int(PARAMS["t1ExitPct"]), step=10)
@@ -2435,7 +2029,7 @@ def run_streamlit_desktop_app():
         PARAMS["sess_end"] = st.text_input("Session End (HH:MM IST)", value=PARAMS["sess_end"])
         PARAMS["coolBars"] = st.number_input("Cooldown Bars after Exit", min_value=0, max_value=50, value=int(PARAMS["coolBars"]))
 
-        st.header("5. Direction & MTF Settings (3m / 5m / 15m / 1h / 4h)")
+        st.header("5. Direction & MTF Settings")
         c1, c2 = st.columns(2)
         with c1: PARAMS["allowCE"] = st.checkbox("Allow CE (Long)", value=PARAMS["allowCE"])
         with c2: PARAMS["allowPE"] = st.checkbox("Allow PE (Short)", value=PARAMS["allowPE"])
@@ -2444,22 +2038,22 @@ def run_streamlit_desktop_app():
         PARAMS["mtf15Req"] = st.checkbox("Require 15m Agreement?", value=PARAMS["mtf15Req"])
         PARAMS["mtfNeed"] = st.slider("Min MTF Conditions (of 4)", min_value=1, max_value=4, value=int(PARAMS["mtfNeed"]))
 
-        st.header("6. ADX, DI, RSI, Volume & Dip Buy (Final Buy)")
+        st.header("6. ADX, DI, RSI, Volume & Final Buy")
         PARAMS["adxOn"] = st.checkbox("Enable ADX Sideways Filter", value=PARAMS["adxOn"])
-        PARAMS["adxMin"] = st.number_input("Min ADX (Avoid Sideways)", min_value=5.0, max_value=50.0, value=float(PARAMS["adxMin"]))
+        PARAMS["adxMin"] = st.number_input("Min ADX", min_value=5.0, max_value=50.0, value=float(PARAMS["adxMin"]))
         PARAMS["diOn"] = st.checkbox("Enable DI+ / DI- Filter", value=PARAMS["diOn"])
         PARAMS["diMtf"] = st.checkbox("Apply DI Filter on 3m & 15m", value=PARAMS["diMtf"])
         PARAMS["diNeed"] = st.slider("DI TF Pass Required (1-3)", min_value=1, max_value=3, value=int(PARAMS["diNeed"]))
 
-        st.subheader("Final Buy (Dip Buy -> Blue Arrow)")
+        st.subheader("Final Buy (Blue Arrow)")
         PARAMS["wfOn"] = st.checkbox("Enable Final Buy (Blue Arrow)", value=PARAMS["wfOn"])
         PARAMS["wfRule"] = st.selectbox("Final Buy Rule", ["E", "A", "B", "C", "D"], index=["E", "A", "B", "C", "D"].index(PARAMS["wfRule"]))
         PARAMS["wfMin"] = st.number_input("Min Wait Bars for Blue Arrow", min_value=1, max_value=15, value=int(PARAMS["wfMin"]))
-        PARAMS["wfMax"] = st.number_input("Max Wait Bars (Timeout)", min_value=5, max_value=50, value=int(PARAMS["wfMax"]))
-        PARAMS["wfDip"] = st.number_input("Dip ATR Multiplier (Rule C)", min_value=0.1, max_value=3.0, value=float(PARAMS["wfDip"]), step=0.1)
-        PARAMS["wfUp"] = st.number_input("Breakout ATR Mult (If no dip)", min_value=0.0, max_value=3.0, value=float(PARAMS["wfUp"]), step=0.1)
+        PARAMS["wfMax"] = st.number_input("Max Wait Bars", min_value=5, max_value=50, value=int(PARAMS["wfMax"]))
+        PARAMS["wfDip"] = st.number_input("Dip ATR Multiplier", min_value=0.1, max_value=3.0, value=float(PARAMS["wfDip"]), step=0.1)
+        PARAMS["wfUp"] = st.number_input("Breakout ATR Mult", min_value=0.0, max_value=3.0, value=float(PARAMS["wfUp"]), step=0.1)
 
-        st.header("7. Option OI, VOL PCR, Futures OI & Probability")
+        st.header("7. Option OI & VOL PCR")
         PARAMS["autoOc"] = st.checkbox("Auto Option Chain OI", value=PARAMS["autoOc"])
         PARAMS["ocN"] = st.slider("Option OI Strike Span (+-N)", min_value=2, max_value=9, value=int(PARAMS["ocN"]))
         PARAMS["ovOn"] = st.checkbox("Enable Option VOL PCR", value=PARAMS["ovOn"])
@@ -2474,7 +2068,7 @@ def run_streamlit_desktop_app():
         PARAMS["callWall"] = st.number_input("Manual Call Wall (0 = Auto)", min_value=0.0, value=float(PARAMS["callWall"]), step=50.0)
         PARAMS["putWall"] = st.number_input("Manual Put Wall (0 = Auto)", min_value=0.0, value=float(PARAMS["putWall"]), step=50.0)
 
-        st.header("8. Daily 20MA Gate, Sector & v22 Filters")
+        st.header("8. Daily 20MA Gate & Sector")
         PARAMS["dgOn"] = st.checkbox("Enable Daily 20MA Gate", value=PARAMS["dgOn"])
         PARAMS["dgMode"] = st.selectbox("Daily Gate Mode", ["Sirf PE par", "Dono (CE + PE)", "Sirf CE par"], index=["Sirf PE par", "Dono (CE + PE)", "Sirf CE par"].index(PARAMS["dgMode"]))
         PARAMS["peScMin"] = st.slider("PE Direction Score Min (0-5)", min_value=0, max_value=5, value=int(PARAMS["peScMin"]))
@@ -2482,23 +2076,7 @@ def run_streamlit_desktop_app():
         PARAMS["scOn"] = st.checkbox("Show Sector Strength Table", value=PARAMS["scOn"])
         PARAMS["scFeed"] = st.checkbox("Use Sector Strength Filter", value=PARAMS["scFeed"])
 
-        with st.expander("v22 Extra Filters (RSI Cap, Volume, Level, Time, Expiry, Trail)"):
-            PARAMS["rsiOn"] = st.checkbox("RSI Cap Filter", value=PARAMS["rsiOn"])
-            PARAMS["rsiHi"] = st.number_input("Max RSI for CE", value=float(PARAMS["rsiHi"]))
-            PARAMS["rsiLo"] = st.number_input("Min RSI for PE", value=float(PARAMS["rsiLo"]))
-            PARAMS["vfOn"] = st.checkbox("Volume Confirm Filter", value=PARAMS["vfOn"])
-            PARAMS["cdOn"] = st.checkbox("Candle Close Strength Filter", value=PARAMS["cdOn"])
-            PARAMS["lvlOn"] = st.checkbox("PDH / PDL Level Guard", value=PARAMS["lvlOn"])
-            PARAMS["rdOn"] = st.checkbox("100-pt Round Level Guard", value=PARAMS["rdOn"])
-            PARAMS["opOn"] = st.checkbox("CE Only Above Today Open", value=PARAMS["opOn"])
-            PARAMS["vxOn"] = st.checkbox("India VIX Filter", value=PARAMS["vxOn"])
-            PARAMS["tmOn"] = st.checkbox("Blocked Time Windows Filter", value=PARAMS["tmOn"])
-            PARAMS["exOn"] = st.checkbox("Skip Expiry Day", value=PARAMS["exOn"])
-            PARAMS["exDay"] = st.selectbox("Expiry Weekday", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].index(PARAMS["exDay"]))
-            PARAMS["beOn"] = st.checkbox("Move SL to Breakeven (+1R)", value=PARAMS["beOn"])
-            PARAMS["trOn"] = st.checkbox("Trail SL on T1 to Target T2", value=PARAMS["trOn"])
-
-        st.header("9. Dashboard Display Settings")
+        st.header("9. Dashboard Settings")
         DASH["textSz"] = st.selectbox("Table Font Size", ["tiny", "small", "normal"], index=["tiny", "small", "normal"].index(DASH["textSz"]))
         DASH["showDetail"] = st.checkbox("Show Full Detail Rows", value=DASH["showDetail"])
         DASH["showLog"] = st.checkbox("Show Signal Log Table", value=DASH["showLog"])
@@ -2511,14 +2089,7 @@ def run_streamlit_desktop_app():
         DASH["vp_showTbl"] = st.checkbox("Show VOL PCR Table", value=DASH["vp_showTbl"])
 
     now_ist = dt.datetime.now(IST)
-    st.info(
-        f"**IST Time:** {now_ist.strftime('%Y-%m-%d %I:%M:%S %p')} | "
-        f"**Mode:** {CONFIG['RUN_MODE']} | "
-        f"**Strike:** {PARAMS['strikeMode']} | "
-        f"**Expiry:** {PARAMS['expiryMode']} | "
-        f"**Exit:** {PARAMS['exitMode']} | "
-        f"**OI Span:** +-{PARAMS['ocN']} | **VOL Span:** +-{PARAMS['ovN']}"
-    )
+    st.info(f"**IST Time:** {now_ist.strftime('%Y-%m-%d %I:%M:%S %p')} | **Mode:** {CONFIG['RUN_MODE']} | **Strike:** {PARAMS['strikeMode']} | **Expiry:** {PARAMS['expiryMode']} | **Exit:** {PARAMS['exitMode']} | **OI Span:** +-{PARAMS['ocN']} | **VOL Span:** +-{PARAMS['ovN']}")
 
     if run_mode == "REAL_TRADE_REPORT":
         st.subheader("Real Live Trades Journal Report")
@@ -2528,14 +2099,13 @@ def run_streamlit_desktop_app():
             st.dataframe(df_rep, use_container_width=True)
             st.download_button("Download Real Trades CSV", df_rep.to_csv(index=False).encode("utf-8"), csv_file, "text/csv")
         else:
-            st.warning("Abhi tak koi Real Trade record file nahi bani hai (0 Real Trades).")
+            st.warning("Abhi tak koi Real Trade record file nahi bani hai.")
         return
 
     creds_ok = (
         (broker_choice == "DHAN" and CONFIG["DHAN_CLIENT_ID"] and CONFIG["DHAN_ACCESS_TOKEN"]) or
         (broker_choice == "UPSTOX" and CONFIG["UPSTOX_ACCESS_TOKEN"])
     )
-
     if not creds_ok:
         st.warning("Sidebar mein apne Broker Credentials (Client ID aur Access Token) daalein.")
         return
@@ -2559,7 +2129,6 @@ def run_streamlit_desktop_app():
             with st.spinner("Data fetch ho raha hai..."):
                 run_backtest(connector, days=CONFIG["BACKTEST_DAYS"])
             st.success("Backtest Complete!")
-
             for m_lbl in (["ALL_SIGNALS", "REAL_BLUE_ONLY"] if CONFIG["BACKTEST_ENTRY_TYPE"] == "BOTH" else [CONFIG["BACKTEST_ENTRY_TYPE"]]):
                 csv_name = f"backtest_{m_lbl}_{PARAMS['strikeMode']}_{PARAMS['exitMode']}.csv"
                 html_name = f"dashboard_backtest_{m_lbl}.html"
@@ -2572,11 +2141,9 @@ def run_streamlit_desktop_app():
                     with open(html_name, "r", encoding="utf-8") as hf:
                         html_str = hf.read()
                     components.html(html_str, height=780, scrolling=True)
-
     else:
         if "live_engine" not in st.session_state:
             st.session_state.live_engine = NiftyOptionProEngine(connector, is_backtest=False)
-
         engine = st.session_state.live_engine
 
         c_btn1, c_btn2, c_btn3, c_btn4 = st.columns(4)
@@ -2605,7 +2172,7 @@ def run_streamlit_desktop_app():
             st.subheader("Live Candlestick Chart + All 12 Pine Script Tables")
             components.html(dash_html, height=820, scrolling=True)
         else:
-            st.info("Upar 'Fetch & Evaluate Live Data' button dabayein — chart aur saari 12 tables yahan load ho jayengi.")
+            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein — chart aur saari 12 tables yahan load ho jayengi.")
 
         if engine.trade_journal:
             st.subheader("Session Trade Journal")
