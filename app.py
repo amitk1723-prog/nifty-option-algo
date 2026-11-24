@@ -1,45 +1,3 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage[utf8]{inputenc}
-\usepackage[margin=0.7in]{geometry}
-\usepackage{listings}
-\usepackage{xcolor}
-
-\definecolor{codebg}{rgb}{0.96,0.96,0.96}
-\definecolor{codegreen}{rgb}{0,0.5,0}
-\definecolor{codegray}{rgb}{0.45,0.45,0.45}
-\definecolor{codeblue}{rgb}{0.1,0.2,0.7}
-
-\lstdefinestyle{pythonstyle}{
-    backgroundcolor=\color{codebg},
-    commentstyle=\color{codegreen},
-    keywordstyle=\color{codeblue}\bfseries,
-    numberstyle=\tiny\color{codegray},
-    stringstyle=\color{red!70!black},
-    basicstyle=\ttfamily\footnotesize,
-    breaklines=true,
-    numbers=left,
-    numbersep=6pt,
-    showstringspaces=false,
-    tabsize=4,
-    frame=single
-}
-
-\title{\textbf{NIFTY 50 Option Algo Full Code (Strict 09:15 AM -- 03:30 PM Dropdown Slots + Live Paper + Backtest)}}
-\author{Amit K. -- Nifty Option Algo (`nifty-option-algo`)}
-\date{\today}
-
-\begin{document}
-\maketitle
-
-\section*{Key Improvements in Version 5}
-\begin{itemize}
-    \item \textbf{Bounded Market-Hours Dropdowns (\texttt{09:15 AM -- 03:30 PM IST}):} Ab 24-hour clock ki jagah sidebar mein \texttt{09:15 AM} se \texttt{03:30 PM} ke andar ke hi 5-minute time slots (jaise \texttt{09:15 AM}, \texttt{09:30 AM}, \texttt{10:00 AM} ... \texttt{03:20 PM}, \texttt{03:30 PM}) dropdown list mein dikhenge. Isse galti se bhi market hours ke bahar ka time select nahi ho payega.
-    \item \textbf{Applied Across All Modes:} Yeh dropdown time selection \textbf{Live Real Trading}, \textbf{Live Paper Trading}, aur \textbf{Historical CSV Backtest} teeno par kaam karega.
-    \item \textbf{Single vs. Multiple Trade Toggle:} Ek trade chalte hue dusra trade lena hai ya block karna hai, uska control bhi sidebar mein hai.
-\end{itemize}
-
-\section*{Complete Python Code (\texttt{app.py})}
-\begin{lstlisting}[language=Python, style=pythonstyle]
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -60,9 +18,6 @@ IST = pytz.timezone("Asia/Kolkata")
 # GENERATE 5-MIN TIME SLOTS (09:15 AM TO 03:30 PM)
 # ==========================================
 def generate_market_time_slots():
-    """
-    Generates exact 5-minute interval time objects strictly from 09:15 AM to 03:30 PM IST.
-    """
     slots = []
     curr = datetime(2026, 1, 1, 9, 15)
     end = datetime(2026, 1, 1, 15, 30)
@@ -93,16 +48,11 @@ def get_ist_now():
     return datetime.now(IST)
 
 def is_valid_market_time(dt_obj, start_time, end_time):
-    """
-    Ensures trades/signals ONLY occur on Weekdays (Mon-Fri)
-    strictly within the user-selected 09:15 AM - 03:30 PM IST window.
-    """
     if dt_obj.tzinfo is None:
         dt_obj = IST.localize(dt_obj)
     else:
         dt_obj = dt_obj.astimezone(IST)
 
-    # Monday = 0, Friday = 4 | Saturday = 5, Sunday = 6
     if dt_obj.weekday() >= 5:
         return False
 
@@ -243,7 +193,7 @@ def execute_order(mode, client_id, access_token, security_id, transaction_type, 
             return {"status": "ERROR", "message": str(e)}
 
 # ==========================================
-# LIVE MARKET ENGINE (09:15 AM - 03:30 PM DROPDOWN WINDOW)
+# LIVE MARKET ENGINE
 # ==========================================
 def process_live_market_tick(
     df, mode, lot_size, t1_pts, sl_pts, pcr_val, sector_breadth,
@@ -253,10 +203,7 @@ def process_live_market_tick(
 ):
     now_ist = get_ist_now()
     if not is_valid_market_time(now_ist, trade_start_t, trade_end_t):
-        return (
-            f"Outside Trading Window ({format_time_12h(trade_start_t)} - {format_time_12h(trade_end_t)} IST). "
-            f"No live/paper orders allowed."
-        )
+        return f"Outside Trading Window ({format_time_12h(trade_start_t)} - {format_time_12h(trade_end_t)} IST)."
 
     df = compute_indicators(df)
     if len(df) < 3:
@@ -271,7 +218,6 @@ def process_live_market_tick(
 
     status_notes = []
 
-    # 1. Manage All Active Open Positions (T1, SL, or Custom Square-Off Time)
     remaining_positions = []
     for pos in st.session_state.active_positions:
         entry_spot = pos["Entry_Spot"]
@@ -315,11 +261,9 @@ def process_live_market_tick(
 
     st.session_state.active_positions = remaining_positions
 
-    # 2. Check User-Defined Concurrent Trade Permission
     open_count = len(st.session_state.active_positions)
     can_open_new = (open_count == 0) if not allow_multiple else (open_count < max_open_trades)
 
-    # 3. Evaluate New Signal on Current Candle (Only before square-off time)
     if st.session_state.last_signal_candle != candle_time_str and now_ist.time() < square_off_t:
         prev_fast = df.loc[prev_idx, "HMA_Fast"]
         prev_slow = df.loc[prev_idx, "HMA_Slow"]
@@ -348,20 +292,15 @@ def process_live_market_tick(
                     execute_order(mode, client_id, access_token, "0", "BUY", lot_size, sig_info, tg_token, tg_chat_id)
                     status_notes.append(f"New {mode} Entry: {signal} ({strike_label}) @ Spot {current_spot:.2f}")
                 else:
-                    status_notes.append(
-                        f"Signal {signal} Skipped: Already {open_count} trade(s) active."
-                    )
+                    status_notes.append(f"Signal {signal} Skipped: Limit reached.")
 
     if status_notes:
         return " | ".join(status_notes)
 
-    return (
-        f"Monitoring Live @ {now_ist.strftime('%I:%M:%S %p')} IST | Spot: {current_spot:.2f} | "
-        f"Open Trades: {len(st.session_state.active_positions)}"
-    )
+    return f"Monitoring Live @ {now_ist.strftime('%I:%M:%S %p')} IST | Open Trades: {len(st.session_state.active_positions)}"
 
 # ==========================================
-# HISTORICAL BACKTEST ENGINE (09:15 AM - 03:30 PM DROPDOWN WINDOW)
+# HISTORICAL BACKTEST ENGINE
 # ==========================================
 def run_historical_backtest(
     df, lot_size=75, t1_pts=30, sl_pts=20, pcr_val=1.0,
@@ -456,26 +395,25 @@ with st.sidebar:
     )
 
     st.header("2. Market Time Window (Strictly 09:15 AM - 03:30 PM)")
-    # Dropdowns strictly bounded between 09:15 AM and 03:30 PM in 5-min steps
     trade_start_time = st.selectbox(
-        "Entry Start Time (09:15 AM - 03:30 PM)",
+        "Entry Start Time",
         options=MARKET_SLOTS[:-1],
-        index=0,  # Default: 09:15 AM
+        index=0,
         format_func=format_time_12h
     )
     valid_end_slots = [t for t in MARKET_SLOTS if t > trade_start_time]
     trade_end_time = st.selectbox(
-        "Market Session End Time (Up to 03:30 PM)",
+        "Market Session End Time",
         options=valid_end_slots,
-        index=len(valid_end_slots) - 1,  # Default: 03:30 PM
+        index=len(valid_end_slots) - 1,
         format_func=format_time_12h
     )
     valid_sq_slots = [t for t in MARKET_SLOTS if trade_start_time < t <= trade_end_time]
     default_sq_idx = valid_sq_slots.index(time(15, 20)) if time(15, 20) in valid_sq_slots else len(valid_sq_slots) - 1
     auto_sq_off_time = st.selectbox(
-        "Auto Square-Off Time (Inside Window)",
+        "Auto Square-Off Time",
         options=valid_sq_slots,
-        index=default_sq_idx,  # Default: 03:20 PM
+        index=default_sq_idx,
         format_func=format_time_12h
     )
 
@@ -486,15 +424,8 @@ with st.sidebar:
     tg_chat_id = st.text_input("Telegram Chat ID", value=st.secrets.get("TELEGRAM_CHAT_ID", ""))
 
     st.header("4. Strategy & Concurrent Trade Control")
-    allow_multiple_trades = st.checkbox(
-        "Allow Multiple Concurrent Trades? (1 trade chalte hue dusra le ya nahi)",
-        value=False
-    )
-    max_concurrent = st.number_input(
-        "Max Concurrent Open Trades (If Allowed)",
-        min_value=1, max_value=10, value=2,
-        disabled=not allow_multiple_trades
-    )
+    allow_multiple_trades = st.checkbox("Allow Multiple Concurrent Trades?", value=False)
+    max_concurrent = st.number_input("Max Concurrent Open Trades", min_value=1, max_value=10, value=2, disabled=not allow_multiple_trades)
     strike_choice = st.selectbox("Strike Selection", ["ATM", "ITM-1"])
     lot_qty = st.number_input("Quantity (1 Lot = 75)", min_value=75, step=75, value=75)
     t1_target = st.number_input("Target 1 (Points)", min_value=5, value=30)
@@ -502,7 +433,7 @@ with st.sidebar:
 
     st.header("5. OI & Sector Breadth Filters")
     vol_pcr = st.number_input("Live Volume PCR", value=1.02, step=0.05)
-    sec_breadth = st.number_input("Sector Breadth Score (-1 to +1)", value=0.25, step=0.05)
+    sec_breadth = st.number_input("Sector Breadth Score", value=0.25, step=0.05)
 
 now_ist = get_ist_now()
 market_open = is_valid_market_time(now_ist, trade_start_time, trade_end_time)
@@ -510,13 +441,10 @@ window_str = f"{format_time_12h(trade_start_time)} - {format_time_12h(trade_end_
 status_label = f"ACTIVE ({window_str})" if market_open else f"BLOCKED (Outside {window_str})"
 trade_rule_label = f"Multi-Trade (Max {max_concurrent})" if allow_multiple_trades else "Single Trade Only"
 
-st.info(
-    f"IST Time: **{now_ist.strftime('%Y-%m-%d %I:%M:%S %p')}** | Window: **{status_label}** | "
-    f"Sq-Off: **{format_time_12h(auto_sq_off_time)}** | Rule: **{trade_rule_label}**"
-)
+st.info(f"IST Time: **{now_ist.strftime('%Y-%m-%d %I:%M:%S %p')}** | Window: **{status_label}** | Sq-Off: **{format_time_12h(auto_sq_off_time)}** | Rule: **{trade_rule_label}**")
 
 # ==========================================
-# MODE 1 & 2: LIVE PAPER TRADING / LIVE REAL TRADING
+# EXECUTION LOGIC
 # ==========================================
 if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
     st.subheader(f"{execution_mode} Dashboard ({window_str})")
@@ -531,7 +459,7 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
             st.success("Session reset.")
 
     if not dhan_client_id or not dhan_access_token:
-        st.warning("Enter Dhan Client ID and Daily Access Token in the sidebar to fetch live 5-min NIFTY data.")
+        st.warning("Enter Dhan Client ID and Daily Access Token in the sidebar.")
     else:
         live_df, err = fetch_live_nifty_5min(dhan_client_id, dhan_access_token)
         if err:
@@ -552,29 +480,21 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
 
             if st.session_state.completed_trades:
                 pt_df = pd.DataFrame(st.session_state.completed_trades)
-                st.subheader(f"{execution_mode} Completed Trades Log")
+                st.subheader("Completed Trades Log")
                 st.dataframe(pt_df, use_container_width=True)
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Total Trades", len(pt_df))
                 m2.metric("Win Rate", f"{(pt_df['Points'] > 0).mean()*100:.1f}%")
                 m3.metric("Total PnL (INR)", f"鈧箋pt_df['PnL (INR)'].sum():,}")
-                st.download_button(
-                    "Download Live/Paper Trade Log CSV",
-                    pt_df.to_csv(index=False).encode("utf-8"),
-                    "nifty_live_paper_trades.csv",
-                    "text/csv"
-                )
+                st.download_button("Download CSV", pt_df.to_csv(index=False).encode("utf-8"), "nifty_trades.csv", "text/csv")
 
     if auto_refresh:
         time_module.sleep(15)
         st.rerun()
 
-# ==========================================
-# MODE 3: HISTORICAL BACKTEST (CSV)
-# ==========================================
 else:
-    st.subheader(f"Historical CSV Backtester ({window_str} Filtered)")
-    uploaded_ohlc = st.file_uploader("Upload 5-Min NIFTY OHLC CSV (Columns: Time, Open, High, Low, Close)", type=["csv"])
+    st.subheader(f"Historical CSV Backtester ({window_str})")
+    uploaded_ohlc = st.file_uploader("Upload 5-Min NIFTY OHLC CSV", type=["csv"])
     if uploaded_ohlc is not None:
         raw_df = pd.read_csv(uploaded_ohlc)
         results_df = run_historical_backtest(
@@ -589,13 +509,4 @@ else:
             c1.metric("Total Trades", len(results_df))
             c2.metric("Win Rate", f"{(results_df['Points'] > 0).mean()*100:.1f}%")
             c3.metric("Net PnL (INR)", f"鈧箋results_df['PnL (INR)'].sum():,}")
-            st.download_button(
-                "Download Clean Backtest CSV",
-                results_df.to_csv().encode("utf-8"),
-                "nifty_clean_backtest.csv",
-                "text/csv"
-            )
-
-\end{lstlisting}
-
-\end{document}
+            st.download_button("Download Clean Backtest CSV", results_df.to_csv().encode("utf-8"), "nifty_clean_backtest.csv", "text/csv")
