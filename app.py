@@ -2,7 +2,7 @@
 """
 nifty_option_pro_v28_FULL.py
 ============================
-100% Full Intact Version + Market Hours Override Toggle + All Original Controls.
+100% Full Intact Version + Market Hours Override Toggle (For Testing Anytime).
 """
 import os
 import time
@@ -156,7 +156,7 @@ PARAMS = {
     "scFeed": False,
     "scNeed": 2,
     "scBankOk": True,
-    "overrideMarketHours": True,
+    "overrideMarketHours": True,  # Naya toggle: Raat ko ya band market me bhi test karne ke liye
 }
 
 _dd = dt.date.today()
@@ -226,7 +226,7 @@ def parse_hhmm(t_str: str) -> dt.time:
 
 def in_session(ts: dt.datetime, start_str: str, end_str: str) -> bool:
     if PARAMS.get("overrideMarketHours", False):
-        return True
+        return True  # Time check bypass ho jayega agar toggle ON hai
     t = ts.time()
     return parse_hhmm(start_str) <= t <= parse_hhmm(end_str)
 
@@ -1243,7 +1243,7 @@ def run_streamlit_desktop_app():
     import streamlit as st
     import streamlit.components.v1 as components
     st.set_page_config(page_title="NIFTY OPTION SIGNAL PRO v28 - Desktop Dashboard", layout="wide", initial_sidebar_state="expanded")
-    st.title("NIFTY OPTION SIGNAL PRO v28 - Full Desktop Trading & Backtest Dashboard")
+    st.title("NIFTY OPTION SIGNAL PRO v28 - Desktop Trading & Backtest Dashboard")
 
     with st.sidebar:
         st.header("1. Broker & API Credentials")
@@ -1273,6 +1273,7 @@ def run_streamlit_desktop_app():
             if auto_order: st.error("LIVE ORDER EXECUTION ON!")
             else: st.info("SAFE MODE: Only Alerts & Dashboard.")
             
+            # [NEW] Market Hours Override for Testing Anytime (Night/Weekend)
             override_hours = st.checkbox("[TEST] Override Market Hours (Test Anytime)", value=PARAMS["overrideMarketHours"])
             PARAMS["overrideMarketHours"] = override_hours
         elif run_mode == "BACKTEST":
