@@ -9,7 +9,7 @@ import pytz
 # ==========================================
 # PAGE CONFIGURATION & APP SETUP
 # ==========================================
-st.set_page_config(page_title="NIFTY 50 Option Algo (09:15 AM - 03:30 PM IST)", layout="wide")
+st.set_page_config(page_title="NIFTY 50 Option Algo (Full Features)", layout="wide")
 st.title("NIFTY 50 Options Algo Trading (Live, Live Paper & Backtest)")
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -94,7 +94,7 @@ def get_option_strike(spot_price, signal_type, strike_mode="ATM", step=50):
     return ""
 
 # ==========================================
-# LIVE NIFTY 5-MIN DATA FETCHER (DHAN API v2 WITH fromDate & toDate)
+# LIVE NIFTY 5-MIN DATA FETCHER (DHAN API v2)
 # ==========================================
 def fetch_live_nifty_5min(client_id, access_token):
     url = "https://api.dhan.co/v2/charts/intraday"
@@ -149,7 +149,7 @@ def send_telegram_alert(bot_token, chat_id, message):
 def execute_order(mode, client_id, access_token, security_id, transaction_type, qty, signal_info, tg_token, tg_chat_id):
     now_str = get_ist_now().strftime("%Y-%m-%d %I:%M:%S %p")
     if mode == "Live Paper Trading":
-        msg = f"📝 *[PAPER TRADE - {transaction_type}]* Time: `{now_str} IST` | Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}` | Spot: `{signal_info['Spot']}` | Qty: `{qty}` | Active Trades: `{len(st.session_state.active_positions)}`"
+        msg = f"馃摑 *[PAPER TRADE - {transaction_type}]* Time: `{now_str} IST` | Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}` | Spot: `{signal_info['Spot']}` | Qty: `{qty}` | Active Trades: `{len(st.session_state.active_positions)}`"
         send_telegram_alert(tg_token, tg_chat_id, msg)
         return {"status": "PAPER_FILLED", "orderId": f"PAPER_{int(datetime.now().timestamp())}"}
 
@@ -172,7 +172,7 @@ def execute_order(mode, client_id, access_token, security_id, transaction_type, 
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=5)
             res_json = resp.json()
-            msg = f"🚀 *[LIVE REAL TRADE - {transaction_type}]* Time: `{now_str} IST` | Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}` | Spot: `{signal_info['Spot']}` | Qty: `{qty}` | Resp: `{res_json}`"
+            msg = f"馃殌 *[LIVE REAL TRADE - {transaction_type}]* Time: `{now_str} IST` | Signal: `{signal_info['Signal']}` | Strike: `{signal_info['Strike']}` | Spot: `{signal_info['Spot']}` | Qty: `{qty}` | Resp: `{res_json}`"
             send_telegram_alert(tg_token, tg_chat_id, msg)
             return res_json
         except Exception as e:
@@ -241,7 +241,7 @@ def process_live_market_tick(
             }
             st.session_state.completed_trades.append(trade_record)
             execute_order(mode, client_id, access_token, "0", "SELL", lot_size, trade_record, tg_token, tg_chat_id)
-            status_notes.append(f"Closed {pos['Strike']} ({exit_reason}) | PnL: ₹{pnl_inr}")
+            status_notes.append(f"Closed {pos['Strike']} ({exit_reason}) | PnL: 鈧箋pnl_inr}")
         else:
             remaining_positions.append(pos)
 
@@ -471,7 +471,7 @@ if execution_mode in ["Live Paper Trading", "Live Real Trading"]:
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Total Trades", len(pt_df))
                 m2.metric("Win Rate", f"{(pt_df['Points'] > 0).mean()*100:.1f}%")
-                m3.metric("Total PnL (INR)", f"₹{pt_df['PnL (INR)'].sum():,}")
+                m3.metric("Total PnL (INR)", f"鈧箋pt_df['PnL (INR)'].sum():,}")
                 st.download_button("Download CSV", pt_df.to_csv(index=False).encode("utf-8"), "nifty_trades.csv", "text/csv")
 
     if auto_refresh:
@@ -494,5 +494,5 @@ else:
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Trades", len(results_df))
             c2.metric("Win Rate", f"{(results_df['Points'] > 0).mean()*100:.1f}%")
-            c3.metric("Net PnL (INR)", f"₹{results_df['PnL (INR)'].sum():,}")
+            c3.metric("Net PnL (INR)", f"鈧箋results_df['PnL (INR)'].sum():,}")
             st.download_button("Download Clean Backtest CSV", results_df.to_csv().encode("utf-8"), "nifty_clean_backtest.csv", "text/csv")
