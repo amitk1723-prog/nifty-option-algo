@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-nifty_option_pro_v28_FULL.py
-============================
-Ek hi file me DONO cheezein:
-  (A) NIFTY OPTION SIGNAL PRO v28 BOT  - Dhan/Upstox live algo, backtest, Final Buy (blue arrow),
-      real-trade journal CSV, Telegram alert, manual exit, strike/expiry/exit selector menu.
-  (B) nifty_dash DASHBOARD            - Pine jaise saare 12 tables (SIGNAL, LOG, BREADTH, OI, STOCKS,
+nifty_option_pro_v28_FULL.py (Streamlit UI + Complete v28 Engine & 12-Table Dashboard)
+======================================================================================
+Ek hi file me SAB KUCH (100% Untouched Logic + Direct Screen Token Input):
+  (A) STREAMLIT CONTROL PANEL        - Seedha screen (sidebar) par Client ID & Access Token dalein.
+  (B) NIFTY OPTION SIGNAL PRO v28 BOT  - Dhan/Upstox live algo, backtest, Final Buy (blue arrow),
+      real-trade journal CSV, Telegram alert, manual exit, strike/expiry/exit selector.
+  (C) nifty_dash DASHBOARD            - Pine jaise saare 12 tables (SIGNAL, LOG, BREADTH, OI, STOCKS,
       SECTOR, SECTOR ALL, JOURNAL, PHASE, EXTRA STATS, GRADE, VOL PCR) + candle chart
-      (BUY/EXIT/FINAL BUY marker, Entry/SL/T1/T2, Reversal, Call/Put Wall) -> dashboard.html
-      (browser me kholo, har 20 sec auto refresh; chart library CDN se aati hai).
-
-Dashboard bot se khud jud gaya hai: har closed 5m bar ke baad dashboard.html update hota hai.
-Backtest ke end me dashboard_backtest_<MODE>.html banta hai.
-Settings:  CONFIG["DASH_ON"], CONFIG["DASH_HTML_PATH"], CONFIG["DASH_CONSOLE_TABLES"]  aur  DASH{} (table positions / show-hide).
+      (BUY/EXIT/FINAL BUY marker, Entry/SL/T1/T2, Reversal, Call/Put Wall).
 """
 import os
 import time
@@ -33,14 +29,14 @@ import streamlit.components.v1 as components
 # ==============================================================================
 st.set_page_config(page_title="Nifty Option Signal PRO v28", layout="wide")
 
-st.sidebar.title("🔐 Broker & API Settings")
+st.sidebar.title("馃攼 Broker & API Settings")
 ui_broker = st.sidebar.selectbox("Select Broker", ["DHAN", "UPSTOX"], index=0)
 ui_chart_sym = st.sidebar.selectbox("Chart Symbol", ["NIFTY_SPOT", "NIFTY_FUT"], index=0)
 ui_client_id = st.sidebar.text_input("Dhan Client ID", value=os.environ.get("DHAN_CLIENT_ID", ""))
 ui_access_token = st.sidebar.text_input("Broker Access Token", type="password", value=os.environ.get("DHAN_ACCESS_TOKEN", ""))
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("⚙️ Strategy & Execution Controls")
+st.sidebar.subheader("鈿欙笍 Strategy & Execution Controls")
 ui_run_mode = st.sidebar.selectbox("Run Mode", ["LIVE", "BACKTEST"], index=0)
 ui_bt_days = st.sidebar.number_input("Backtest Days", min_value=1, max_value=180, value=30)
 ui_bt_type = st.sidebar.selectbox("Backtest Entry Type", ["BOTH", "REAL_BLUE_ONLY", "ALL_SIGNALS"], index=0)
@@ -56,10 +52,10 @@ ui_auto_order = st.sidebar.checkbox("Auto Place Live Order (Real Trades)", value
 # 1. BROKER, CHART, EXECUTION & TELEGRAM CONFIG (GitHub Secrets + Direct Support)
 # ==============================================================================
 CONFIG = {
-    "BROKER": ui_broker,              # "DHAN" ya "UPSTOX"
-    "CHART_SYMBOL": ui_chart_sym,  # "NIFTY_SPOT" ya "NIFTY_FUT"
+    "BROKER": ui_broker,
+    "CHART_SYMBOL": ui_chart_sym,
 
-    # Dhan API Credentials (Direct paste karein ya GitHub Secrets se auto-load hoga)
+    # Dhan API Credentials
     "DHAN_CLIENT_ID": ui_client_id,
     "DHAN_ACCESS_TOKEN": ui_access_token,
 
@@ -71,18 +67,18 @@ CONFIG = {
     "TELEGRAM_CHAT_ID": os.environ.get("TELEGRAM_CHAT_ID", ""),
 
     # Run Mode & Order Execution
-    "RUN_MODE": ui_run_mode,            # "LIVE" = Real-time Market Algo | "BACKTEST" = Historical Backtest
-    "BACKTEST_DAYS": int(ui_bt_days),           # Backtest kitne din ke historical data par chalana hai
-    "BACKTEST_ENTRY_TYPE": ui_bt_type, # "ALL_SIGNALS" | "REAL_BLUE_ONLY" | "BOTH"
-    "AUTO_PLACE_ORDER": ui_auto_order,     # True = Blue Arrow par Live Order jayega | False = Sirf Alert/Log
+    "RUN_MODE": ui_run_mode,
+    "BACKTEST_DAYS": int(ui_bt_days),
+    "BACKTEST_ENTRY_TYPE": ui_bt_type,
+    "AUTO_PLACE_ORDER": ui_auto_order,
     "PRODUCT_TYPE": "INTRADAY",
-    "INTERACTIVE_MENU": False,      # True = Run karte hi screen par Option Selection Menu aayega
-    "REAL_TRADES_CSV": "live_real_trades_journal.csv",  # Real Live Trades ka permanent record file
+    "INTERACTIVE_MENU": False,
+    "REAL_TRADES_CSV": "live_real_trades_journal.csv",
 
     # Dashboard (nifty_dash)
-    "DASH_ON": True,                       # True = chart + tables dashboard.html banao
-    "DASH_HTML_PATH": "dashboard.html",    # Live dashboard file ka naam
-    "DASH_CONSOLE_TABLES": False,          # True = har bar par saari tables console me bhi print hongi
+    "DASH_ON": True,
+    "DASH_HTML_PATH": "dashboard.html",
+    "DASH_CONSOLE_TABLES": False,
 }
 
 # ==============================================================================
@@ -90,140 +86,140 @@ CONFIG = {
 # ==============================================================================
 PARAMS = {
     # --- STRIKE & EXPIRY SELECTION OPTIONS ---
-    "strikeMode": ui_strike_mode,           # Options: "ATM", "ITM_1", "ITM_2", "OTM_1"
-    "expiryMode": ui_expiry_mode,  # Options: "CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"
-    "manualExpiry": ui_manual_expiry,            # Sirf expiryMode="MANUAL" ke liye (e.g., "2026-11-24")
+    "strikeMode": ui_strike_mode,
+    "expiryMode": ui_expiry_mode,
+    "manualExpiry": ui_manual_expiry,
 
     # --- TARGET EXIT OPTIONS (Live Algo + Backtest Dono Ke Liye) ---
-    "exitMode": ui_exit_mode,              # Options: "T1", "T2", "T1_T2", "MANUAL"
-    "t1ExitPct": 50,               # "T1_T2" mode me T1 par kitne % lots book karne hain
-    "useHighLowForTarget": True,   # True = Candle High/Low touch par T1/T2 exit | False = Sirf Candle Close par
+    "exitMode": ui_exit_mode,
+    "t1ExitPct": 50,
+    "useHighLowForTarget": True,
 
     # --- G0: Chart, Market Window & Trade Settings ---
-    "chartType": "Index/Fut",      # "Index/Fut", "CE prem", "PE prem"
-    "optStep": 50.0,               # Strike Step (Nifty 50 = 50, BankNifty = 100)
-    "optLot": 65,                  # Lot Size (NSE/broker se verify karein)
-    "optDelta": 0.5,               # Approx Option Delta (0.1 to 1.0)
-    "slMult": 1.5,                 # SL = ATR(10) x
-    "rrT": 2.0,                    # Target 1 Risk:Reward
-    "capital": 100000.0,           # Capital (Rs)
-    "riskPct": 1.0,                # Risk per trade % of capital
-    "needN": 4,                    # Signal ke liye min conditions (of 5)
-    "orBars": 3,                   # Opening Range bars (3 x 5m = 15 min)
-    "sess_start": "09:20",         # Market Trade Window Start (IST)
-    "sess_end": "15:00",           # Market Trade Window End (IST)
-    "extMult": 3.0,                # Peak chase band: price EMA21 se itne ATR se door ho to skip
-    "coolBars": 6,                 # Exit ke baad itne bar nayi entry nahi (6 x 5m = 30 min)
+    "chartType": "Index/Fut",
+    "optStep": 50.0,
+    "optLot": 65,
+    "optDelta": 0.5,
+    "slMult": 1.5,
+    "rrT": 2.0,
+    "capital": 100000.0,
+    "riskPct": 1.0,
+    "needN": 4,
+    "orBars": 3,
+    "sess_start": "09:20",
+    "sess_end": "15:00",
+    "extMult": 3.0,
+    "coolBars": 6,
 
     # MTF Toggles (3m, 5m, 15m, 1h, 4h)
-    "mtfOn": True,                 # 3m + 5m (+ 15m) agree toggle
-    "mtf15Req": False,             # True = 15m zaroori | False = buy 3m+5m se, 15m bullish/bearish ho to '+'
-    "mtfNeed": 3,                  # Har extra timeframe par min conditions (of 4)
+    "mtfOn": True,
+    "mtf15Req": False,
+    "mtfNeed": 3,
 
     # Sideways & DI Filter Toggles
-    "adxOn": True,                 # Sideways filter: ADX kam ho to signal band
-    "adxLen": 14,                  # ADX length
-    "adxMin": 20.0,                # ADX itne se kam = sideways (signal band)
-    "diOn": True,                  # DI filter ON: CE me D+ upar aur D- neeche, PE me ulta
-    "diMtf": True,                 # DI filter 3m aur 15m par bhi ON/OFF (False = sirf 5m)
-    "diNeed": 2,                   # 5m / 3m / 15m me se kitne TF pass hone chahiye (1 se 3)
-    "adxTrd": 20.0,                # DI filter: ADX itne se UPAR ho
-    "diStrong": 20.0,              # Signal side DI itne se UPAR ho
-    "diWeak": 20.0,                # Ulta side DI itne se NEECHE ho
+    "adxOn": True,
+    "adxLen": 14,
+    "adxMin": 20.0,
+    "diOn": True,
+    "diMtf": True,
+    "diNeed": 2,
+    "adxTrd": 20.0,
+    "diStrong": 20.0,
+    "diWeak": 20.0,
 
     # Direction & PE Specific Filters
-    "allowCE": True,               # CE signal ON/OFF (Long)
-    "allowPE": True,               # PE signal ON/OFF (Short)
-    "peBrMax": 100.0,              # PE sirf tab jab Breadth Score <= itna (100 = OFF)
-    "peAdxMin": 0.0,               # PE ke liye alag min ADX (0 = OFF)
-    "peHtf": "1h PE",              # "OFF", "1h PE", "1h + 4h PE"
-    "peBelowOpen": True,           # PE sirf tab jab price aaj ke open ke neeche ho
-    "optSym": "",                  # Specific Option Symbol - khali = Auto Strike/Expiry
-    "optEntry": 0.0,               # Option manual entry premium (0 = auto)
+    "allowCE": True,
+    "allowPE": True,
+    "peBrMax": 100.0,
+    "peAdxMin": 0.0,
+    "peHtf": "1h PE",
+    "peBelowOpen": True,
+    "optSym": "",
+    "optEntry": 0.0,
 
     # --- G5: Final Buy (Green/Red Arrow -> Calculation -> Blue Arrow) ---
-    "wfOn": True,                  # Final Buy arrow & 2-step confirmation ON/OFF
-    "wfMin": 1,                    # Final Buy signal candle ke kam se kam itne candle baad hi
-    "wfRule": "E",                 # "A" (Dip+ATR), "B" (Sig Close), "C" (Dip+Wick), "D" (MA Cross), "E" (Simple Dip+Rev)
-    "wfA": 0.5,                    # A rule: dip low se itne ATR(10) upar close ho
-    "wfDip": 0.5,                  # C rule: signal close se min dip (ATR x)
-    "wfWk": 40,                    # C rule: reversal candle wick %
-    "wfF": 3,                      # D rule: Fast MA length
-    "wfS": 5,                      # D rule: Slow MA length
-    "wfMax": 20,                   # Max candles wait for Final Buy (uske baad cancel)
-    "wfUp": 0.5,                   # Dip nahi aaya to signal close se ATR x upar/neeche breakout (0 = OFF)
-    "wfUpPts": 0.0,                # Fixed points breakout (0 = ATR setting use hogi)
-    "wfWick": True,                # True = Dip original SL ki wick touch kare to bhi cancel | False = sirf close
+    "wfOn": True,
+    "wfMin": 1,
+    "wfRule": "E",
+    "wfA": 0.5,
+    "wfDip": 0.5,
+    "wfWk": 40,
+    "wfF": 3,
+    "wfS": 5,
+    "wfMax": 20,
+    "wfUp": 0.5,
+    "wfUpPts": 0.0,
+    "wfWick": True,
 
     # --- G7: Daily 20MA Direction Gate (7 din / 5 din) ---
-    "dgOn": True,                  # Daily 20MA gate ON/OFF
-    "dgMode": "Sirf PE par",       # "Dono (CE + PE)", "Sirf PE par", "Sirf CE par"
-    "peScMin": 3,                  # PE direction score: 5 shart me se min kitni pass hon (0 = OFF, 0 to 5)
-    "dgLen": 20,                   # Daily Moving Average length
-    "dgD1": 7,                     # Pehla check: kitne daily candle pehle
-    "dgD2": 5,                     # Doosra check: kitne daily candle pehle
-    "dgFlat": 0.05,                # MA ek din me itne % se kam hile = flat
+    "dgOn": True,
+    "dgMode": "Sirf PE par",
+    "peScMin": 3,
+    "dgLen": 20,
+    "dgD1": 7,
+    "dgD2": 5,
+    "dgFlat": 0.05,
 
-    # --- G8: v22 Upgrades (Sab default False = exact v28 default; True karke ON karein) ---
-    "lateOn": False,               # Late-entry guard: ADX aur Breadth dono bahut high ho to skip
+    # --- G8: v22 Upgrades ---
+    "lateOn": False,
     "lateAdx": 40.0,
     "lateBr": 90.0,
-    "arOn": False,                 # ADX rising: ADX pichhle arN bar se badh raha ho
+    "arOn": False,
     "arN": 3,
-    "rsiOn": False,                # RSI cap: CE me RSI > rsiHi / PE me < rsiLo ho to skip
+    "rsiOn": False,
     "rsiHi": 76.0,
     "rsiLo": 24.0,
-    "cdOn": False,                 # Candle strength: CE me close high ke paas, PE me low ke paas
+    "cdOn": False,
     "cdPos": 0.6,
-    "vfOn": False,                 # Volume confirm: volume 20 bar average se kam na ho
+    "vfOn": False,
     "vfMult": 1.0,
-    "lvlOn": False,                # Level guard: CE PDH ke paas / PE PDL ke paas to skip
+    "lvlOn": False,
     "lvlBuf": 0.15,
-    "rdOn": False,                 # Round level guard: 100-pt round level ke paas skip
+    "rdOn": False,
     "rdStep": 100.0,
     "rdPts": 15.0,
-    "opOn": False,                 # CE sirf tab jab price aaj ke open ke upar ho
-    "vxOn": False,                 # India VIX: CE me VIX badh na raha ho, PE me gir na raha ho
+    "opOn": False,
+    "vxOn": False,
     "vxLook": 12,
-    "tmOn": False,                 # Time filter: neeche ke 3 band windows me nayi entry nahi
+    "tmOn": False,
     "tmS1": ("09:20", "09:35"),
     "tmS2": ("12:00", "13:30"),
     "tmS3": ("14:45", "15:00"),
-    "exOn": False,                 # Expiry day par nayi entry nahi
-    "exDay": "Tuesday",            # "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
-    "beOn": False,                 # Breakeven: price +beR risk chala jaye to SL entry par
+    "exOn": False,
+    "exDay": "Tuesday",
+    "beOn": False,
     "beR": 1.0,
     "beLock": 0.1,
-    "trOn": False,                 # Trail: T1 par exit nahi, SL +1R par lock, exit T2 par
-    "gdA": 8,                      # Grade A: 9 me se min pass
-    "gdB": 6,                      # Grade B: 9 me se min pass
+    "trOn": False,
+    "gdA": 8,
+    "gdB": 6,
 
-    # --- G3, G4, G9: OPTION OI + OPTION VOLUME PCR + FUTURES OI (STRIKE RANGE 2..9) ---
-    "autoOc": True,                # Option Chain OI Auto ON/OFF (Dhan/Upstox API se asli OI)
-    "ocN": int(ui_oc_n),                      # Option OI ke liye ATM +- N strikes (Options: 2,3,4,5,6,7,8,9)
-    "pcrIn": 0.0,                  # Manual OI PCR (0 = OFF)
-    "callWall": 0.0,               # Manual Call Wall (0 = OFF)
-    "putWall": 0.0,                # Manual Put Wall (0 = OFF)
-    "wallBuf": 0.3,                # Wall ke itne % paas aane par us side ka trade skip
+    # --- G3, G4, G9: OPTION OI + OPTION VOLUME PCR + FUTURES OI ---
+    "autoOc": True,
+    "ocN": int(ui_oc_n),
+    "pcrIn": 0.0,
+    "callWall": 0.0,
+    "putWall": 0.0,
+    "wallBuf": 0.3,
     "pcrBull": 1.1,
     "pcrBear": 0.9,
 
-    "ovOn": True,                  # VOL PCR indicator ON/OFF
-    "ovN": int(ui_ov_n),                      # Option Volume ke liye ATM +- N strikes (Options: 2,3,4,5,6,7,8,9)
+    "ovOn": True,
+    "ovN": int(ui_ov_n),
     "ovBull": 1.2,
     "ovBear": 0.8,
-    "ovFeed": True,                # True = VOL PCR aur Volume Wall ko trade probability & filter me lagao
+    "ovFeed": True,
 
-    "futOiOn": True,               # Futures OI analysis ON/OFF
-    "oiLook": 12,                  # Futures OI / price change kitne bar peeche se
+    "futOiOn": True,
+    "oiLook": 12,
 
-    "oiProbFilterOn": True,        # True = Min Combined OI+Volume Probability % pass hone par hi entry
-    "minOiProbCE": 55.0,           # CE Buy ke liye minimum OI+Vol Bullish Probability %
-    "minOiProbPE": 55.0,           # PE Buy ke liye minimum OI+Vol Bearish Probability %
-    "requireHighProbOnly": False,  # True = Sirf 'HIGH PROB' signals pe trade | False = HIGH PROB + medium
+    "oiProbFilterOn": True,
+    "minOiProbCE": 55.0,
+    "minOiProbPE": 55.0,
+    "requireHighProbOnly": False,
 
     # --- G1: Pre-Alert & Display ---
-    "preSec": 15,                  # Pre-alert: candle close se itne second pehle warning alert (0 = band)
+    "preSec": 15,
 
     # --- G2: Breadth (20 Heavyweight Stocks) ---
     "flatPct": 0.02,
@@ -238,29 +234,25 @@ PARAMS = {
     "scBankOk": True,
 }
 
-
 # ==============================================================================
-# 2B. DASHBOARD DISPLAY SETTINGS (nifty_dash tables / chart ki position aur show-hide)
+# 2B. DASHBOARD DISPLAY SETTINGS (12 Tables + Chart Positions)
 # ==============================================================================
 _dd = dt.date.today()
 DASH = {
-    "textSz": "tiny",              # "tiny", "small", "normal" (table font)
-    "showDetail": True,            # True = SIGNAL table ki saari detail rows (Bull/Bear, EMA, VWAP, RSI, ADX ...)
-    "showMk": True,                # Chart par BUY/EXIT markers
-    "lblMode": "ON",               # "ON" = marker par poora text | "OFF" = sirf BUY CE / BUY PE / EXIT
+    "textSz": "tiny",
+    "showDetail": True,
+    "showMk": True,
+    "lblMode": "ON",
     "lblBars": 0,
-    "wfArrow": True,               # Chart par FINAL BUY (blue) arrow
-    "wfMaShow": False,             # Final Buy rule D ki fast/slow MA line chart par
-    # Table positions: Top Left/Center/Right, Middle Left/Right, Bottom Left/Center/Right
+    "wfArrow": True,
+    "wfMaShow": False,
     "posSig": "Top Right", "posLg": "Bottom Right", "posBr": "Top Left", "posOi": "Middle Left",
     "posLs": "Bottom Left", "scPos": "Top Center", "scPosA": "Middle Right", "posJ": "Bottom Center",
     "posPh": "Bottom Center", "posXs": "Middle Right", "gdPos": "Top Center", "vp_pos": "Middle Left",
-    # Table show/hide
     "showLog": True, "showList": True, "scAll": True, "jShow": True, "phShow": True,
     "xsShow": True, "gdShow": True, "vp_showTbl": True,
-    "jPg": 1,                      # Journal page number
-    "vp_useSpot": True,            # VOL PCR table me spot/chart source dikhane ke liye
-    # Phase-wise stats ke dates (entry date se): P1 = ph1S..ph2S, P2 = ph2S..phE
+    "jPg": 1,
+    "vp_useSpot": True,
     "ph1S": (_dd - dt.timedelta(days=60)).isoformat(),
     "ph2S": (_dd - dt.timedelta(days=30)).isoformat(),
     "phE": _dd.isoformat(),
@@ -280,162 +272,6 @@ def get_trade_strike(spot_price: float, side: str) -> float:
     elif mode == "OTM_1":
         return (atm + step) if side == "CE" else (atm - step)
     return atm
-
-def show_real_trade_report(connector=None):
-    """
-    Algo ne ab tak kitne REAL LIVE TRADES liye hain (Local CSV + Broker Order/Trade Book),
-    un sabhi ka poora hisab aur P&L report dikhata hai.
-    """
-    print("\n" + "=" * 82)
-    print("   ALGO REAL TRADE REPORT (KITNE REAL TRADE LIYE GAYE HAIN)")
-    print("=" * 82)
-
-    csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
-    if os.path.exists(csv_file):
-        df_local = pd.read_csv(csv_file)
-        if not df_local.empty:
-            total_real = len(df_local)
-            executed_orders = len(df_local[df_local["OrderPlaced"] == True]) if "OrderPlaced" in df_local.columns else total_real
-            closed_df = df_local[df_local["Status"] == "CLOSED"] if "Status" in df_local.columns else df_local
-            open_df = df_local[df_local["Status"] == "OPEN"] if "Status" in df_local.columns else pd.DataFrame()
-            wins = len(closed_df[closed_df["PnL_Pts"] > 0]) if "PnL_Pts" in closed_df.columns else 0
-            losses = len(closed_df[closed_df["PnL_Pts"] <= 0]) if "PnL_Pts" in closed_df.columns else 0
-            net_pts = closed_df["PnL_Pts"].sum() if "PnL_Pts" in closed_df.columns else 0.0
-
-            print(f"[A] ALGO JOURNAL RECORD ({csv_file}):")
-            print(f"    Total Blue Arrow Real Trades : {total_real} (Broker Live Orders Sent: {executed_orders})")
-            print(f"    Open Trades: {len(open_df)} | Closed Trades: {len(closed_df)} (Win: {wins} / Loss: {losses}) | Net P&L: {net_pts:+.2f} pts")
-            print("-" * 82)
-            print(df_local.to_string(index=False))
-        else:
-            print(f"[A] ALGO JOURNAL RECORD: Abhi tak 0 real trades record hue hain.")
-    else:
-        print(f"[A] ALGO JOURNAL RECORD: Abhi tak koi real trade file nahi bani hai (0 Real Trades).")
-
-    if connector is not None:
-        print("\n" + "-" * 82)
-        print(f"[B] BROKER ({connector.broker}) AAJ KI LIVE ORDER & POSITION BOOK:")
-        try:
-            broker_summary = connector.get_broker_live_trade_summary()
-            print(broker_summary)
-        except Exception as e:
-            print(f"    Broker book fetch info: {e}")
-    print("=" * 82 + "\n")
-
-
-def interactive_option_selector(connector=None):
-    if not CONFIG.get("INTERACTIVE_MENU", True) or os.environ.get("GITHUB_ACTIONS") == "true":
-        return
-
-    print("\n" + "=" * 68)
-    print("   NIFTY OPTION SIGNAL PRO v28 - OPTION & BACKTEST SELECTOR")
-    print("=" * 68)
-
-    # 1. Mode Selection (LIVE vs BACKTEST vs REAL TRADE REPORT)
-    print("\n[1] Mode Chunein:")
-    print("    1 = LIVE Trading / Alerts (Default)")
-    print("    2 = BACKTEST (Historical Check - Bina Live Trade Liye Bhi Chalega)")
-    print("    3 = REAL TRADE REPORT (Algo Ne Ab Tak Kitne Real Trade Liye Uska Hisab Dekhein)")
-    m_in = input("    Option number dalein (Enter = 1): ").strip()
-
-    if m_in == "3":
-        show_real_trade_report(connector)
-        cont = input("Kya ab LIVE ya BACKTEST chalana hai? (1 = LIVE, 2 = BACKTEST, Enter = Exit): ").strip()
-        if cont not in ("1", "2"):
-            raise SystemExit(0)
-        m_in = cont
-
-    if m_in == "2":
-        CONFIG["RUN_MODE"] = "BACKTEST"
-        d_in = input(f"    Kitne din ka Backtest chahiye? (Enter = {CONFIG['BACKTEST_DAYS']}): ").strip()
-        if d_in.isdigit() and int(d_in) > 0:
-            CONFIG["BACKTEST_DAYS"] = int(d_in)
-
-        print("\n[1B] Backtest Type Chunein (Same Data Par):")
-        print("    1 = BOTH (Initial Signals + Real Blue Arrow Final Buy Dono Ka Comparison)")
-        print("    2 = REAL_BLUE_ONLY (Sirf Real Trade - Blue Arrow Final Buy Confirm Hone Par Entry)")
-        print("    3 = ALL_SIGNALS (Har Initial Green/Red Arrow Signal Par Entry)")
-        bt_in = input("    Option number dalein (Enter = 1 BOTH): ").strip()
-        bt_map = {"1": "BOTH", "2": "REAL_BLUE_ONLY", "3": "ALL_SIGNALS"}
-        if bt_in in bt_map:
-            CONFIG["BACKTEST_ENTRY_TYPE"] = bt_map[bt_in]
-    else:
-        CONFIG["RUN_MODE"] = "LIVE"
-
-    # 2. Strike Selection (ATM vs ITM_1 vs ITM_2 vs OTM_1)
-    print("\n[2] Strike Selection (Kaun sa Option Buy Karna Hai):")
-    print("    1 = ATM (Round Figure ATM - e.g. 25500 CE/PE)")
-    print("    2 = ITM 1 (In-The-Money 1 Step - e.g. CE: 25450 / PE: 25550)")
-    print("    3 = ITM 2 (In-The-Money 2 Step - e.g. CE: 25400 / PE: 25600)")
-    print("    4 = OTM 1 (Out-Of-The-Money 1 Step - e.g. CE: 25550 / PE: 25450)")
-    s_in = input("    Option number dalein (Enter = 1 ATM): ").strip()
-    strike_map = {"1": "ATM", "2": "ITM_1", "3": "ITM_2", "4": "OTM_1"}
-    if s_in in strike_map:
-        PARAMS["strikeMode"] = strike_map[s_in]
-
-    # 3. Expiry Selection
-    print("\n[3] Expiry Selection:")
-    avail_exps = []
-    if connector is not None:
-        try:
-            avail_exps = connector.get_all_upcoming_expiries()
-        except Exception:
-            avail_exps = []
-
-    if avail_exps:
-        print(f"    Broker Upcoming Expiries: {', '.join(avail_exps[:5])}")
-    print("    1 = CURRENT_WEEK (Is Hafte Ki Nearest Expiry)")
-    print("    2 = NEXT_WEEK    (Agle Hafte Ki Weekly Expiry)")
-    print("    3 = MONTHLY      (Is Mahine Ki Monthly Expiry)")
-    print("    4 = MANUAL       (Khud Date Dalein YYYY-MM-DD)")
-    e_in = input("    Option number dalein (Enter = 1 CURRENT_WEEK): ").strip()
-    exp_map = {"1": "CURRENT_WEEK", "2": "NEXT_WEEK", "3": "MONTHLY", "4": "MANUAL"}
-    if e_in in exp_map:
-        PARAMS["expiryMode"] = exp_map[e_in]
-        if PARAMS["expiryMode"] == "MANUAL":
-            dt_in = input("    Expiry Date likhein (e.g. 2026-11-24): ").strip()
-            if dt_in:
-                PARAMS["manualExpiry"] = dt_in
-
-    # 4. Target Exit Selection (T1, T2, T1_T2, MANUAL)
-    print("\n[4] Target Exit Option Chunein:")
-    print("    1 = T1     (Target 1 hit hote hi 100% exit)")
-    print("    2 = T2     (T1 par SL +1R trail, Target 2 par 100% exit)")
-    print("    3 = T1_T2  (50% T1 par book + SL Entry par, baaki 50% T2 par exit)")
-    print("    4 = MANUAL (Auto Target exit OFF - jab chahein tab exit karein)")
-    x_in = input("    Option number dalein (Enter = 1 T1): ").strip()
-    exit_map = {"1": "T1", "2": "T2", "3": "T1_T2", "4": "MANUAL"}
-    if x_in in exit_map:
-        PARAMS["exitMode"] = exit_map[x_in]
-
-    # 5. Option OI & Volume Strike Span (2 to 9)
-    print("\n[5] Option OI & Volume Strike Range (ATM se Upar aur Neeche kitne strike: 2 se 9):")
-    oi_in = input(f"    Option OI Strike Span dalein [2-9] (Enter = {PARAMS['ocN']}): ").strip()
-    if oi_in.isdigit() and 2 <= int(oi_in) <= 9:
-        PARAMS["ocN"] = int(oi_in)
-    vol_in = input(f"    Option Volume PCR Strike Span dalein [2-9] (Enter = {PARAMS['ovN']}): ").strip()
-    if vol_in.isdigit() and 2 <= int(vol_in) <= 9:
-        PARAMS["ovN"] = int(vol_in)
-
-    # 6. Auto Order Confirmation (Only for LIVE mode)
-    if CONFIG["RUN_MODE"] == "LIVE":
-        print("\n[6] Order Execution Mode:")
-        print("    1 = SIRF ALERTS (Safe Mode - Blue Arrow par alert aayega, order nahi lagega)")
-        print("    2 = AUTO LIVE ORDER (Blue Arrow par Broker me real order lag jayega)")
-        o_in = input("    Option number dalein (Enter = 1 Safe Alert Mode): ").strip()
-        CONFIG["AUTO_PLACE_ORDER"] = (o_in == "2")
-
-    # 7. Dashboard (chart + tables)
-    print("\n[7] Dashboard (candle chart + 12 tables -> dashboard.html):")
-    print("    1 = ON (Default)   2 = OFF   3 = ON + tables console me bhi")
-    d_in2 = input("    Option number dalein (Enter = 1 ON): ").strip()
-    CONFIG["DASH_ON"] = (d_in2 != "2")
-    CONFIG["DASH_CONSOLE_TABLES"] = (d_in2 == "3")
-
-    print("\n" + "-" * 68)
-    print(f"SELECTED -> Mode: {CONFIG['RUN_MODE']} ({CONFIG['BACKTEST_ENTRY_TYPE']}) | Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']} | OI: +-{PARAMS['ocN']} | Vol: +-{PARAMS['ovN']}")
-    print("-" * 68 + "\n")
-
 
 BREADTH_STOCKS = [
     ("HDFCBANK", 9.85), ("ICICIBANK", 9.45), ("RELIANCE", 7.83), ("BHARTIARTL", 5.00),
@@ -465,7 +301,6 @@ SECTOR_MAP = {
 BANK_STOCKS = {"HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "INDUSINDBK"}
 DOW_MAP = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4}
 IST = pytz.timezone("Asia/Kolkata")
-
 
 # ==============================================================================
 # 3. EXACT PINE SCRIPT TECHNICAL MATH
@@ -1126,4 +961,1567 @@ def build_tables(eng, o, D, vp, C):
     for q in range(15):
         has = sc["cn"][q] > 0 and not na(avg[q])
         SA.append((SECTOR_NAMES[q] + (f" ({sc['cn'][q]})" if has else ""), f_scTxt(avg[q] if has else NAN), f_scCol(avg[q] if has else NAN)))
-    tabs.append(T("SECTOR ALL", C.scPosA, SA, enabled=C.sc
+    tabs.append(T("SECTOR ALL", C.scPosA, SA, enabled=C.scAll))
+
+    # ---------------------------------------------------------------- JOURNAL / PHASE / EXTRA STATS / GRADE
+    jTot = max(1, math.ceil(len(eng.jRows) / 15.0))
+    page = eng.jRows[(C.jPg - 1) * 15:(C.jPg - 1) * 15 + 15]
+    J = [(None, f"JOURNAL pg {C.jPg}/{jTot} | {len(eng.jRows)} trade since {fmt_t(eng.jFirst, 'dd/MM')} | M=MAE F=MFE FB=FinalBuy D=dip/bar", "navy")]
+    J += [(None, x, "green" if " +" in x else "red") for x in page]
+    tabs.append(T("JOURNAL", C.posJ, J, cols=1, enabled=C.jShow))
+
+    def phTx(a, d):
+        n = d["n"]
+        return (f"{a} {n}tr W{(d['w'] * 100.0 / n if n > 0 else 0):.0f}% PF {pfTxt(d['g'], d['l'])} {'+' if d['q'] >= 0 else ''}{d['q']:.1f}",
+                "gray" if n == 0 else ("green" if d["q"] >= 0 else "red"))
+    p1 = "P1 " + fmt_t(pd.Timestamp(C.ph1S), "dd/MM"); p2 = "P2 " + fmt_t(pd.Timestamp(C.ph2S), "dd/MM")
+    PH = [(None, f"PHASE-WISE (entry date se) | P2 end {fmt_t(pd.Timestamp(C.phE), 'dd/MM')}", "navy")]
+    for a, k in ((p1 + " CE", "1C"), (p1 + " PE", "1P"), (p2 + " CE", "2C"), (p2 + " PE", "2P")):
+        t, c = phTx(a, eng.ph[k]); PH.append((None, t, c))
+    tabs.append(T("PHASE", C.posPh, PH, cols=1, enabled=C.phShow))
+
+    nT = eng.winN + eng.lossN
+    gpAll = eng.gpCE + eng.gpPE; glAll = eng.glCE + eng.glPE
+    X = [(None, f"EXTRA STATS ({nT} trade since {fmt_t(eng.jFirst, 'dd/MM')})", "navy"),
+         (None, f"Win% CE {(eng.wCE * 100.0 / (eng.wCE + eng.lCE)) if (eng.wCE + eng.lCE) > 0 else float('nan'):.0f} | PE "
+                f"{(eng.wPE * 100.0 / (eng.wPE + eng.lPE)) if (eng.wPE + eng.lPE) > 0 else float('nan'):.0f} | All "
+                f"{(eng.winN * 100.0 / nT) if nT > 0 else float('nan'):.0f}", "gray"),
+         (None, f"Avg Win +{(gpAll / eng.winN) if eng.winN > 0 else float('nan'):.1f} | Avg Loss -{(glAll / eng.lossN) if eng.lossN > 0 else float('nan'):.1f}", "gray"),
+         (None, f"Expectancy {(('+' if eng.totPnl >= 0 else '') + format(eng.totPnl / nT, '.1f')) if nT > 0 else '-'} per trade",
+          "gray" if nT == 0 else ("green" if eng.totPnl >= 0 else "red")),
+         (None, f"Max loss streak: {eng.maxConsL}", "gray"),
+         (None, f"Winners MAE avg {(eng.sMaeW / eng.winN) if eng.winN > 0 else float('nan'):.0f} / max {eng.mMaeW:.0f} (SL idea)", "gray"),
+         (None, f"Avg MFE {(eng.sMfe / nT) if nT > 0 else float('nan'):.0f}", "gray")]
+    if C.wfOn:
+        X += [(None, f"Watch {eng.wNsig} | Final Buy {eng.wNfin} | Nahi {eng.wNcan}", "gray"),
+              (None, f"FINAL BUY se: {eng.fbN}tr W{(eng.fbW * 100.0 / eng.fbN) if eng.fbN > 0 else 0:.0f}% PF {pfTxt(eng.fbGp, eng.fbGl)} {'+' if eng.fbT >= 0 else ''}{eng.fbT:.1f}",
+               ("green" if eng.fbT >= 0 else "red") if eng.fbN > 0 else "gray"),
+              (None, f"Wahi trade signal se: {'+' if eng.fbOrg >= 0 else ''}{eng.fbOrg:.1f} | Bina FB {eng.noN}tr {'+' if eng.noT >= 0 else ''}{eng.noT:.1f}", "gray")]
+    else:
+        X += [(None, "Final Buy arrow OFF", "gray")]
+    tabs.append(T("EXTRA STATS", C.posXs, X, cols=1, enabled=C.xsShow))
+
+    gdCol = lambda n: "green" if n >= C.gdA else ("orange" if n >= C.gdB else "red")
+    gdTxt = lambda n: "A" if n >= C.gdA else ("B" if n >= C.gdB else "C")
+    G = [("SETUP CE", f"{gdTxt(o.gdCE)} {o.gdCE}/9", gdCol(o.gdCE)), ("CE weak", o.gdWC if o.gdWC else "-", "orange" if o.gdWC else "gray"),
+         ("SETUP PE", f"{gdTxt(o.gdPE)} {o.gdPE}/9", gdCol(o.gdPE)), ("PE weak", o.gdWP if o.gdWP else "-", "orange" if o.gdWP else "gray")]
+    tabs.append(T("GRADE", C.gdPos, G, enabled=C.gdShow))
+
+    # ---------------------------------------------------------------- VOL PCR indicator ki table (vt)
+    V = []
+    if vp is not None:
+        ok = vp.get("ok")
+        if ok:
+            sig = vp["sig"]
+            V = [("VOL PCR", f"{vp['pcr']:.2f}" + (" bull" if sig > 0 else (" bear" if sig < 0 else " neutral")), "green" if sig > 0 else ("red" if sig < 0 else "gray")),
+                 ("VOL C / P", f"C {vp['ce'] / 1e5:.1f}L P {vp['pe'] / 1e5:.1f}L", "gray"),
+                 ("VOL Wall", "--" if (na(vp["putK"]) or na(vp["callK"])) else f"S {vp['putK']:.0f} R {vp['callK']:.0f}", "gray"),
+                 ("ATM (lock)", f"{vp['ctr']:.0f} +-{C.vp_N}", "blue"),
+                 ("VOL data", f"{vp['exp']:%y%m%d} {vp['cnt']}/{vp['total']}", "green"),
+                 ("Spot / ATM src", f"{o.close:.1f} " + ("spot" if C.vp_useSpot else "chart"), "gray")]
+        else:
+            V = [("VOL PCR", "no data", "orange"), ("VOL data", (f"{pd.Timestamp(vp['exp']):%y%m%d} " if vp.get('exp') is not None else "-- ") + f"{vp.get('cnt')}/{vp.get('total')}", "orange")]
+    tabs.append(T("VOL PCR", C.vp_pos, V, title="VOL PCR", enabled=C.vp_showTbl and bool(V)))
+    return tabs
+
+
+# ------------------------------------------------------------------------------
+def render_console(tabs, only=None):
+    out = []
+    for t in tabs:
+        if not t["enabled"] or (only and t["name"] not in only):
+            continue
+        out.append(f"+-- {t['name']} ({t['pos']}) " + "-" * 20)
+        for r in t["rows"]:
+            if t["cols"] == 1:
+                out.append(f"| {r[0] if r[0] is not None else ''}{r[1] if r[0] is None else ''}")
+            elif t["cols"] == 4:
+                out.append(f"| {r[0]:<22} {r[1]:>8}   {r[3]:<22} {r[4]:>8}")
+            else:
+                out.append(f"| {r[0]:<16} {r[1]}")
+    return "\n".join(out)
+
+
+# ------------------------------------------------------------------------------
+CSS_COL = {"green": "#1b8f4b", "red": "#c0392b", "gray": "#4a5568", "orange": "#d9822b", "blue": "#2563eb", "purple": "#7c3aed",
+           "navy": "#1e2a52", "maroon": "#8a1c3c", "lime": "#65a30d", "teal": "#0f766e"}
+POS_CSS = {"Top Left": "top:6px;left:6px;align-items:flex-start", "Top Center": "top:6px;left:50%;transform:translateX(-50%);align-items:center",
+           "Top Right": "top:6px;right:70px;align-items:flex-end", "Middle Left": "top:50%;left:6px;transform:translateY(-50%);align-items:flex-start",
+           "Middle Right": "top:50%;right:70px;transform:translateY(-50%);align-items:flex-end",
+           "Bottom Left": "bottom:30px;left:6px;align-items:flex-start", "Bottom Center": "bottom:30px;left:50%;transform:translateX(-50%);align-items:center",
+           "Bottom Right": "bottom:30px;right:70px;align-items:flex-end"}
+
+
+def _clean(x):
+    if isinstance(x, float) and (math.isnan(x) or math.isinf(x)):
+        return None
+    return x
+
+
+def _html_table(t, fs):
+    h = [f'<table class="t" style="font-size:{fs}px">']
+    if t["title"]:
+        h.append(f'<tr><th colspan="{2 if t["cols"] != 1 else 1}" style="background:{CSS_COL["navy"]}">{t["title"]}</th></tr>')
+    for r in t["rows"]:
+        if t["cols"] == 1:
+            h.append(f'<tr><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td></tr>')
+        elif t["cols"] == 4:
+            h.append(f'<tr><td style="background:{CSS_COL["navy"]}">{_esc(r[0])}</td><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td>'
+                     f'<td style="background:{CSS_COL["navy"]}">{_esc(r[3])}</td><td style="background:{CSS_COL[r[5]]}">{_esc(r[4])}</td></tr>')
+        else:
+            h.append(f'<tr><td style="background:{CSS_COL["navy"]}">{_esc(r[0])}</td><td style="background:{CSS_COL[r[2]]}">{_esc(r[1])}</td></tr>')
+    h.append("</table>")
+    return "".join(h)
+
+
+def _esc(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def render_html(tabs, eng, o, C, path):
+    fs = {"tiny": 10, "small": 12, "normal": 14}.get(C.textSz, 10)
+    f5 = o.f5.tail(300)
+    off = 19800                      # IST ko chart par seedha dikhane ke liye
+    ts = lambda t: int(pd.Timestamp(t).timestamp()) + off
+    candles = [dict(time=ts(i), open=_clean(float(r.o)), high=_clean(float(r.h)), low=_clean(float(r.l)), close=_clean(float(r.c))) for i, r in f5.iterrows()]
+    t0 = f5.index[0]
+    ev = [e for e in eng.events if e["t"] >= t0]
+    marks = []
+    lblOn = C.lblMode != "OFF" and (C.lblBars == 0 or True)
+    for e in ev:
+        k = e["k"]
+        if k == "BUY CE" and C.showMk:
+            marks.append(dict(time=ts(e["t"]), position="belowBar", color="#16a34a" if e.get("p", 0) < 2 else "#84cc16", shape="arrowUp", text=(e["text"].replace("\n", " ") if lblOn else "BUY CE")))
+        elif k == "BUY PE" and C.showMk:
+            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#dc2626" if e.get("p", 0) < 2 else "#d946ef", shape="arrowDown", text=(e["text"].replace("\n", " ") if lblOn else "BUY PE")))
+        elif k == "EXIT" and C.showMk:
+            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#16a34a" if e.get("win") else "#dc2626", shape="circle", text=e["text"] if lblOn else "EXIT"))
+        elif k == "FINAL BUY CE" and C.wfArrow:
+            marks.append(dict(time=ts(e["t"]), position="belowBar", color="#2563eb", shape="arrowUp", text="FB " + e["text"]))
+        elif k == "FINAL BUY PE" and C.wfArrow:
+            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#2563eb", shape="arrowDown", text="FB " + e["text"]))
+    if getattr(o, "preCE", False):
+        marks.append(dict(time=ts(o.t_open), position="belowBar", color="#eab308", shape="square", text="PRE CE"))
+    if getattr(o, "preAlertPE", False):
+        marks.append(dict(time=ts(o.t_open), position="aboveBar", color="#eab308", shape="square", text="PRE PE"))
+    marks.sort(key=lambda m: m["time"])
+    hist = [h for h in eng.hist if h["t"] >= t0]
+
+    def series(key):
+        return [({"time": ts(h["t"]), "value": h[key]} if not na(h[key]) else {"time": ts(h["t"])}) for h in hist]
+    lines = []
+    if o.posSt != 0 and not na(o.posEn):
+        lines += [dict(price=o.posEn, color="#2563eb", title="ENTRY %.1f" % o.posEn, style=0), dict(price=o.posSl, color="#dc2626", title="SL %.1f" % o.posSl, style=2),
+                  dict(price=o.posT1, color="#16a34a", title="T1 %.1f" % o.posT1, style=2), dict(price=o.posT2, color="#16a34a", title="T2 %.1f" % o.posT2, style=2)]
+        if not na(o.revPlot):
+            lines.append(dict(price=o.revPlot, color="#f59e0b", title="REVERSAL %.1f" % o.revPlot, style=1))
+    if not o.isPrem:
+        if not na(o.callEff): lines.append(dict(price=o.callEff, color="#ef4444", title="CALL WALL %.0f" % o.callEff, style=1))
+        if not na(o.putEff): lines.append(dict(price=o.putEff, color="#22c55e", title="PUT WALL %.0f" % o.putEff, style=1))
+    payload = dict(candles=candles, marks=marks, lines=lines, en=series("en"), sl=series("sl"), t1=series("t1"), t2=series("t2"),
+                   wf=series("wf"), ws=series("ws"), showMa=bool(C.wfMaShow))
+    zones = {}
+    for t in tabs:
+        if t["enabled"] and t["rows"]:
+            zones.setdefault(t["pos"], []).append(_html_table(t, fs))
+    zhtml = "".join(f'<div class="z" style="{POS_CSS[p]}">{"".join(v)}</div>' for p, v in zones.items() if p in POS_CSS)
+    title = f"NIFTY OPT PRO - {o.t_open:%d %b %H:%M}  close {o.close:.1f}"
+    html = f'''<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="20"><title>{title}</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>html,body{{margin:0;height:100%;background:#0b1020;color:#e5e7eb;font-family:Arial,sans-serif}}
+#chart{{position:absolute;inset:0}}
+.z{{position:absolute;display:flex;flex-direction:column;gap:4px;z-index:5;pointer-events:none;max-height:96%}}
+.t{{border-collapse:collapse;color:#fff;opacity:.93}} .t td,.t th{{border:1px solid rgba(255,255,255,.35);padding:1px 5px;white-space:nowrap}}
+#bar{{position:absolute;top:0;left:0;right:0;height:0;z-index:9}} #btn{{position:absolute;right:6px;top:6px;z-index:10;background:#1e2a52;color:#fff;border:1px solid #fff5;padding:3px 8px;cursor:pointer}}
+</style></head><body><div id="chart"></div><button id="btn" onclick="document.querySelectorAll('.z').forEach(e=>e.style.display=e.style.display=='none'?'flex':'none')">Tables</button>
+{zhtml}
+<script>
+const P={json.dumps(payload, allow_nan=False)};
+const ch=LightweightCharts.createChart(document.getElementById('chart'),{{layout:{{background:{{color:'#0b1020'}},textColor:'#cbd5e1'}},
+ grid:{{vertLines:{{color:'#1b2440'}},horzLines:{{color:'#1b2440'}}}},timeScale:{{timeVisible:true,secondsVisible:false}},rightPriceScale:{{borderColor:'#334155'}}}});
+const cs=ch.addCandlestickSeries({{upColor:'#26a69a',downColor:'#ef5350',borderVisible:false,wickUpColor:'#26a69a',wickDownColor:'#ef5350'}});
+cs.setData(P.candles); cs.setMarkers(P.marks);
+function ln(d,c,w){{const s=ch.addLineSeries({{color:c,lineWidth:w,priceLineVisible:false,lastValueVisible:false}}); s.setData(d); return s;}}
+ln(P.en,'#2563eb',2); ln(P.sl,'#dc2626',2); ln(P.t1,'#16a34a',2); ln(P.t2,'#84cc16',1);
+if(P.showMa){{ln(P.wf,'#f59e0b',1); ln(P.ws,'#a855f7',1);}}
+P.lines.forEach(l=>cs.createPriceLine({{price:l.price,color:l.color,lineWidth:1,lineStyle:l.style,axisLabelVisible:true,title:l.title}}));
+ch.timeScale().fitContent();
+</script></body></html>'''
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+# ==============================================================================
+# 5. COMPLETE STRATEGY ENGINE (LIVE REAL TRADE COUNTER + BACKTEST)
+# ==============================================================================
+class NiftyOptionProEngine:
+    def __init__(self, broker: BrokerConnector, is_backtest: bool = False, bt_entry_mode: str = "ALL_SIGNALS"):
+        self.broker = broker
+        self.is_backtest = is_backtest
+        self.bt_entry_mode = bt_entry_mode
+        self.ovCtr = None
+        self.bar_index = 0
+        self.last_pre_alert_bar = -1
+
+        # Real Live Trade Counter (Kitne Real Trade Algo Ne Liye)
+        self.real_trade_count = 0
+        self.real_live_orders_sent = 0
+        self.active_real_trade_id = ""
+        self._load_existing_real_trade_count()
+
+        self.posSt = 0
+        self.posEn = np.nan
+        self.posSl = np.nan
+        self.posT1 = np.nan
+        self.posT2 = np.nan
+        self.posR = np.nan
+        self.posMv = False
+        self.t1Booked = False
+        self.activeStrike = 0.0
+        self.activeExpiry = ""
+        self.activeLots = 0
+        self.remainingLots = 0
+        self.realizedTradePnl = 0.0
+        self.lastExit = -1000
+        self.armCE = True
+        self.armPE = True
+
+        self.trade_journal = []
+        self.logs = []
+        self.winN = 0
+        self.lossN = 0
+        self.totPnl = 0.0
+        self.gp = 0.0
+        self.gl = 0.0
+        self.eqC = 0.0
+        self.eqPk = 0.0
+        self.maxDD = 0.0
+        self.entTx = ""
+        self.entT = None
+        self.entAdx = np.nan
+        self.entSc = np.nan
+        self.entProbCE = 50.0
+        self.entProbPE = 50.0
+        self.tkLo = np.nan
+        self.tkHi = np.nan
+
+        self.wSt = 0
+        self.wBar = 0
+        self.wSigC = np.nan
+        self.wSl = np.nan
+        self.wExt = np.nan
+        self.wLast = "--"
+        self.wCloses = []
+        self.fbEn = np.nan
+        self.wPendingSide = ""
+        self.wPendingStrike = 0.0
+        self.wPendingExpiry = ""
+        self.wPendingLots = 0
+        self.wPendingPlus = ""
+        self.wPendingAdx = np.nan
+        self.wPendingSc = np.nan
+        self.wPendingProbCE = 50.0
+        self.wPendingProbPE = 50.0
+
+        # ---- DASHBOARD stats (nifty_dash ke tables ke liye) ----
+        self.events = []                 # chart markers: BUY CE/PE, EXIT, FINAL BUY
+        self.hist = []                   # har bar ki Entry/SL/T1/T2 + Final Buy MA line
+        self.lastSigT = None
+        self.lastSigTx = ""
+        self.lastSigBar = 0
+        self.dirSince = None
+        self.dirSinceBar = 0
+        self._prevDir = 0
+        self.wCE = self.lCE = self.wPE = self.lPE = 0
+        self.tCE = self.tPE = 0.0
+        self.gpCE = self.glCE = self.gpPE = self.glPE = 0.0
+        self.jRows = []
+        self.jFirst = None
+        self.ph = {k: dict(n=0, w=0, g=0.0, l=0.0, q=0.0) for k in ("1C", "1P", "2C", "2P")}
+        self.maxConsL = 0
+        self._curL = 0
+        self.mMaeW = 0.0
+        self.sMaeW = 0.0
+        self.sMfe = 0.0
+        self.fbN = self.fbW = 0
+        self.fbGp = self.fbGl = self.fbT = self.fbOrg = 0.0
+        self.noN = 0
+        self.noT = 0.0
+        self.wNsig = self.wNfin = self.wNcan = 0
+        self.optEnPrem = np.nan
+        self.last_o = None
+        self.last_vp = None
+        self._fb_now = 0
+
+    # ---------------------------------------------------------------- dashboard helpers
+    @property
+    def bar_idx(self):
+        return self.bar_index
+
+    @property
+    def lg(self):
+        return self.logs
+
+    def _dash_stats(self, exit_ts, exit_px, exit_reason, pnl, sgn, mae, mfe, fb_pnl):
+        """Trade band hone par CE/PE-wise, phase-wise, journal, FINAL BUY stats update."""
+        win = pnl > 0
+        if sgn == 1:
+            if win:
+                self.wCE += 1
+                self.gpCE += pnl
+            else:
+                self.lCE += 1
+                self.glCE += abs(pnl)
+            self.tCE += pnl
+        else:
+            if win:
+                self.wPE += 1
+                self.gpPE += pnl
+            else:
+                self.lPE += 1
+                self.glPE += abs(pnl)
+            self.tPE += pnl
+        if win:
+            self.mMaeW = max(self.mMaeW, mae)
+            self.sMaeW += mae
+            self._curL = 0
+        else:
+            self._curL += 1
+            self.maxConsL = max(self.maxConsL, self._curL)
+        self.sMfe += mfe
+
+        had_fb = not np.isnan(self.fbEn)
+        if had_fb:
+            self.fbN += 1
+            self.fbOrg += pnl
+            if not np.isnan(fb_pnl):
+                self.fbT += fb_pnl
+                if fb_pnl > 0:
+                    self.fbW += 1
+                    self.fbGp += fb_pnl
+                else:
+                    self.fbGl += abs(fb_pnl)
+        else:
+            self.noN += 1
+            self.noT += pnl
+
+        ent_t = self.entT if self.entT is not None else exit_ts
+        if self.jFirst is None:
+            self.jFirst = ent_t
+        try:
+            d0 = pd.Timestamp(ent_t).date()
+            p1s = pd.Timestamp(DASH["ph1S"]).date()
+            p2s = pd.Timestamp(DASH["ph2S"]).date()
+            pe = pd.Timestamp(DASH["phE"]).date()
+            key = "1" if (p1s <= d0 < p2s) else ("2" if (p2s <= d0 <= pe) else None)
+            if key:
+                ph = self.ph[key + ("C" if sgn == 1 else "P")]
+                ph["n"] += 1
+                ph["q"] += pnl
+                if win:
+                    ph["w"] += 1
+                    ph["g"] += pnl
+                else:
+                    ph["l"] += abs(pnl)
+        except Exception:
+            pass
+
+        dip = abs(self.wSigC - self.wExt) if (had_fb and not np.isnan(self.wSigC) and not np.isnan(self.wExt)) else np.nan
+        row = f"{self.entTx} {pd.Timestamp(ent_t):%d/%m %H:%M} {exit_reason} {pnl:+.1f}p M{mae:.0f} F{mfe:.0f}"
+        if had_fb and not np.isnan(fb_pnl):
+            row += f" FB{fb_pnl:+.0f}"
+        if not np.isnan(dip):
+            row += f" D{dip:.0f}"
+        self.jRows.insert(0, row)
+        self.jRows = self.jRows[:300]
+        self.events.append(dict(t=exit_ts, k="EXIT", text=f"{exit_reason} {pnl:+.0f}", win=win))
+
+    def _dash_pre(self, entCE, entPE):
+        """Pre-alert (candle close se pehle) - chart par PRE CE / PRE PE marker."""
+        if self.last_o is not None:
+            self.last_o.preCE = bool(entCE)
+            self.last_o.preAlertPE = bool(entPE)
+
+    def _dash_capture(self, L):
+        """Har closed bar ke baad dashboard ke 'o' state object banata hai (evaluate_bar_data ke locals se)."""
+        t5, t3, t15, t1h, t4h = L["t5"], L["t3"], L["t15"], L["t1h"], L["t4h"]
+        br = L["br"]
+        close = L["close"]
+        bar_ts = L["bar_ts"]
+        oc = L.get("oc_data") or {}
+        step = PARAMS["optStep"]
+        posOn = self.posSt != 0
+        mDir = L["mDir"]
+        entCE, entPE = L["entCE"], L["entPE"]
+        score, hasBr = L["score"], L["hasBr"]
+        callEff, putEff = L["callEff"], L["putEff"]
+        atmNow = L["atmNow"]
+        oc_span = L["oc_span"]
+        ov_span = L["ov_span"]
+        nan = np.nan
+        s_txt = lambda x: "CE" if x == 1 else ("PE" if x == -1 else "-")
+
+        # ---- ACTION
+        if entCE:
+            act = "BUY CE"
+        elif entPE:
+            act = "BUY PE"
+        elif L.get("exitNow"):
+            exr = L.get("exRes", "")
+            act = ("BOOK " if exr in ("T1", "T2", "T1_FULL") else "EXIT ") + exr
+        elif posOn:
+            act = "HOLD CE" if self.posSt == 1 else "HOLD PE"
+        else:
+            act = "WAIT"
+
+        # ---- trade levels (Entry/SL/T1/T2)
+        if posOn:
+            shOn, shEn, shSl, shT1, shT2 = True, self.posEn, self.posSl, self.posT1, self.posT2
+        elif self.wSt != 0 and not np.isnan(self.wSigC):
+            slD = L["slD"]
+            shOn = True
+            shEn, shSl = self.wSigC, self.wSl
+            shT1 = self.wSigC + self.wSt * slD * PARAMS["rrT"]
+            shT2 = self.wSigC + self.wSt * slD * (PARAMS["rrT"] + 1.0)
+        else:
+            shOn, shEn, shSl, shT1, shT2 = False, nan, nan, nan, nan
+        pnlV = (self.posSt * (close - self.posEn)) if posOn else nan
+
+        # ---- Reversal (OI wall)
+        sideNow = self.posSt if posOn else mDir
+        relK = callEff if sideNow == 1 else (putEff if sideNow == -1 else nan)
+        callDist = ((callEff - close) / close * 100.0) if not np.isnan(callEff) else nan
+        putDist = ((close - putEff) / close * 100.0) if not np.isnan(putEff) else nan
+
+        # ---- option premium (chain se)
+        ltp_map = oc.get("ltpMap") or {}
+        if posOn:
+            o_side, o_strike = self.posSt, self.activeStrike
+        else:
+            o_side = mDir
+            o_strike = L["strikeCE"] if mDir == 1 else (L["strikePE"] if mDir == -1 else nan)
+        optPx = nan
+        if o_side != 0 and not np.isnan(o_strike):
+            rec = ltp_map.get(round(float(o_strike), 2))
+            if rec:
+                v = rec.get("ce" if o_side == 1 else "pe", nan)
+                try:
+                    v = float(v)
+                    optPx = v if (not np.isnan(v) and v > 0) else nan
+                except Exception:
+                    optPx = nan
+        if posOn:
+            if np.isnan(self.optEnPrem) and not np.isnan(optPx):
+                self.optEnPrem = optPx
+            optEnPx = self.optEnPrem
+        else:
+            self.optEnPrem = nan
+            optEnPx = optPx
+
+        # ---- OI / chain status
+        ocOk = L["ocOk"]
+        if ocOk:
+            ocStatus = f"Chain OK ({oc.get('ocCnt', 0)} pts, +-{oc_span})"
+        elif PARAMS["pcrIn"] > 0 or PARAMS["callWall"] > 0 or PARAMS["putWall"] > 0:
+            ocStatus = "Manual settings se"
+        else:
+            ocStatus = "Chain data nahi"
+        volPcrVal = L["volPcrVal"]
+        volOk_pcr = L["volOk_pcr"]
+        vol_sig = oc.get("volSig", 0.0) if volOk_pcr else 0.0
+
+        # ---- Daily 20MA tag
+        dgS1, dgS2, dgUp, dgDn = L["dgS1"], L["dgS2"], L["dgUp"], L["dgDn"]
+        dgTag = f"{PARAMS['dgD1']}d {dgS1:+.2f}% {PARAMS['dgD2']}d {dgS2:+.2f}% " + ("UP" if dgUp else ("DOWN" if dgDn else "FLAT"))
+        dgBg = "green" if dgUp else ("red" if dgDn else "gray")
+
+        # ---- Grade weak points
+        g = L.get
+        wkC = [n for n, bad in (("Late", g("rawLateCE")), ("ADX girta", not g("rawAr")), ("RSI hot", not g("rawRsiCE")),
+                                ("Candle", not g("rawCdCE")), ("Vol", not g("rawVol")),
+                                ("Level", g("pdhNear") or g("rdUpNear")), ("Open", not g("rawOpCE")),
+                                ("VIX", not g("rawVxCE")), ("Time", g("tmBlkR"))) if bad]
+        wkP = [n for n, bad in (("Late", g("rawLatePE")), ("ADX girta", not g("rawAr")), ("RSI low", not g("rawRsiPE")),
+                                ("Candle", not g("rawCdPE")), ("Vol", not g("rawVol")),
+                                ("Level", g("pdlNear") or g("rdDnNear")),
+                                ("Open", PARAMS["peBelowOpen"] and not (close < g("today_open"))),
+                                ("VIX", not g("rawVxPE")), ("Time", g("tmBlkR"))) if bad]
+
+        # ---- breadth / sector / stocks
+        bex = dict(upPct=br["upPct"], dnPct=br["dnPct"], nUp=br["nUpC"], nDn=br["nDnC"], up10=br["up10"],
+                   dn10=br["dn10"], impl=br["impl"], nOk=br["nOk"], wTot=br["wTot"])
+        sc = dict(avg=br["secAvgL"], cn=br["secCn"], valid=br["scValid"], bk=br["scBk"], bkN=br["bkN"],
+                  noData=(br["scValid"] == 0), scCE=br["scCE"], scPE=br["scPE"])
+        bullMd = hasBr and score >= 55 and not br["bullHi"]
+        bearMd = hasBr and score <= 45 and not br["bearHi"]
+
+        f5 = L["df_5m"][["open", "high", "low", "close"]].tail(300).copy()
+        f5.columns = ["o", "h", "l", "c"]
+
+        o = SimpleNamespace(
+            act=act, entNow=bool(entCE or entPE), plusTxt=L["plusTxt"], fin=L["fin"], why=L["why"],
+            modeTxt=f"{PARAMS['strikeMode']} / {PARAMS['exitMode']}",
+            mtfTxt=f"{s_txt(t3['side'])} / {s_txt(t5['side'])} / {s_txt(t15['side'])}",
+            sideC=t1h["side"], sideD=t4h["side"], mDir=mDir, sideNow=sideNow,
+            sigCE=L["sigCE"], sigPE=L["sigPE"], fbCE=(self._fb_now == 1), fbPE=(self._fb_now == -1),
+            preCE=False, preAlertPE=False,
+            score=score, brTxt=br["brTxt"], bullHi=br["bullHi"], bearHi=br["bearHi"], bullMd=bullMd, bearMd=bearMd,
+            aligned=br["aligned"], bex=bex, sc=sc, gs=br["gs"],
+            posSt=self.posSt, posEn=self.posEn, posSl=self.posSl, posT1=self.posT1, posT2=self.posT2,
+            shOn=shOn, shEn=shEn, shSl=shSl, shT1=shT1, shT2=shT2, pnlV=pnlV,
+            lots=L["lots"], lotRisk=L["lotRisk"], riskRs=L["riskRs"], isPrem=(PARAMS["chartType"] != "Index/Fut"),
+            close=close, t_open=bar_ts, f5=f5,
+            relK=relK, relPrem=nan, revPlot=relK, callEff=callEff, putEff=putEff, callDist=callDist, putDist=putDist,
+            nearCall=L["nearCall"], nearPut=L["nearPut"],
+            oiScore=L["oiScore"], pcrEff=L["ocPcrVal"], pcrOn=(not np.isnan(L["ocPcrVal"])), pcrS=L["pcrS"],
+            ocOk=ocOk, ovUseF=L["ovUseF"], futS=L["futS"], futTxt=L["futTxt"],
+            ocAtmNow=atmNow, ocK0=atmNow - oc_span * step, ocK8=atmNow + oc_span * step, ocStatus=ocStatus,
+            ovOk=volOk_pcr, ovPcr=volPcrVal, ovS=vol_sig,
+            ovPutK=oc.get("volPutK", nan), ovCallK=oc.get("volCallK", nan),
+            vol=({"ce": oc.get("volCeSum", 0), "pe": oc.get("volPeSum", 0)} if volOk_pcr else {}),
+            optEnPx=optEnPx, optPx=optPx,
+            bull=t5["bull"], bear=t5["bear"], maxC=t5["maxC"],
+            ema9=t5["ema9"], ema21=t5["ema21"], ema50=t5["ema50"], rsiV=t5["rsi"], sdir=t5["sdir"],
+            vw=t5["vwap"], vwOk=t5["vwOk"], orDone=t5["orDone"], orH=t5["orH"], orL=t5["orL"],
+            volOk=L["volOk"], volSurge=bool(L["volOk"] and L["vol"] >= 1.5 * L["volAvg"]),
+            adxV=t5["adx"], adxOk=L["adxOk"], diPl=t5["diPl"], diMi=t5["diMi"],
+            dgTag=dgTag, dgBg=dgBg, peScore=L["peScore"],
+            gdCE=L["gdCE"], gdPE=L["gdPE"], gdWC=", ".join(wkC), gdWP=", ".join(wkP),
+        )
+        self.last_o = o
+
+        # ---- VOL PCR indicator table ka data
+        if PARAMS["ovOn"]:
+            try:
+                exp_ts = pd.Timestamp(L["selected_exp"])
+            except Exception:
+                exp_ts = pd.Timestamp(bar_ts)
+            self.last_vp = dict(ok=bool(volOk_pcr), sig=vol_sig, pcr=volPcrVal, ce=oc.get("volCeSum", 0),
+                                pe=oc.get("volPeSum", 0), putK=oc.get("volPutK", nan), callK=oc.get("volCallK", nan),
+                                ctr=(self.ovCtr if self.ovCtr is not None else atmNow), exp=exp_ts,
+                                cnt=oc.get("volCnt", 0), total=2 * (2 * ov_span + 1))
+        else:
+            self.last_vp = None
+
+        # ---- chart history (Entry/SL/T1/T2 line + Final Buy MA)
+        self.hist.append(dict(
+            t=bar_ts,
+            en=self.posEn if posOn else nan, sl=self.posSl if posOn else nan,
+            t1=self.posT1 if posOn else nan, t2=self.posT2 if posOn else nan,
+            wf=g("smaF", nan) if self.wSt != 0 else nan, ws=g("smaS", nan) if self.wSt != 0 else nan))
+        self.hist = self.hist[-1500:]
+        self.events = self.events[-800:]
+
+    def render_dashboard(self, path=None, console=None):
+        """Tables console me (optional) + dashboard.html (candle chart + tables) likhta hai."""
+        if not CONFIG.get("DASH_ON", True) or self.last_o is None:
+            return
+        try:
+            C = SimpleNamespace(**{**PARAMS, **DASH, "vp_N": PARAMS["ovN"]})
+            tabs = build_tables(self, self.last_o, None, self.last_vp, C)
+            show_c = CONFIG.get("DASH_CONSOLE_TABLES", False) if console is None else console
+            if show_c:
+                print(render_console(tabs))
+            render_html(tabs, self, self.last_o, C, path or CONFIG.get("DASH_HTML_PATH", "dashboard.html"))
+        except Exception as exc:
+            print(f"[Dashboard Error] {exc}")
+            traceback.print_exc()
+
+    def _load_existing_real_trade_count(self):
+        if self.is_backtest:
+            return
+        csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
+        if os.path.exists(csv_file):
+            try:
+                df_ex = pd.read_csv(csv_file)
+                self.real_trade_count = len(df_ex)
+                if "OrderPlaced" in df_ex.columns:
+                    self.real_live_orders_sent = int(df_ex["OrderPlaced"].sum())
+            except Exception:
+                pass
+
+    def _log_real_trade_entry(self, bar_ts: dt.datetime, side: str, strike: float, expiry: str, lots: int, spot_px: float, prob: float, order_sent: bool):
+        if self.is_backtest:
+            return
+        self.real_trade_count += 1
+        if order_sent:
+            self.real_live_orders_sent += 1
+        self.active_real_trade_id = f"RT-{bar_ts.strftime('%Y%m%d')}-{self.real_trade_count}"
+        csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
+        row = {
+            "TradeID": self.active_real_trade_id,
+            "Date": bar_ts.strftime("%Y-%m-%d"),
+            "EntryTime": bar_ts.strftime("%H:%M:%S"),
+            "Contract": f"NIFTY {int(strike)} {side}",
+            "StrikeMode": PARAMS["strikeMode"],
+            "Expiry": expiry,
+            "Lots": lots,
+            "EntrySpot": round(spot_px, 2),
+            "ExitTime": "",
+            "ExitSpot": np.nan,
+            "ExitReason": "",
+            "PnL_Pts": 0.0,
+            "OI_Prob%": round(prob, 1),
+            "OrderPlaced": order_sent,
+            "Status": "OPEN"
+        }
+        df_new = pd.DataFrame([row])
+        if os.path.exists(csv_file):
+            df_old = pd.read_csv(csv_file)
+            df_all = pd.concat([df_old, df_new], ignore_index=True)
+        else:
+            df_all = df_new
+        df_all.to_csv(csv_file, index=False)
+
+    def _log_real_trade_exit(self, exit_ts: dt.datetime, exit_px: float, exit_reason: str, pnl_pts: float):
+        if self.is_backtest or not self.active_real_trade_id:
+            return
+        csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
+        if os.path.exists(csv_file):
+            try:
+                df_all = pd.read_csv(csv_file)
+                mask = df_all["TradeID"] == self.active_real_trade_id
+                if mask.any():
+                    df_all.loc[mask, "ExitTime"] = exit_ts.strftime("%H:%M:%S")
+                    df_all.loc[mask, "ExitSpot"] = round(exit_px, 2)
+                    df_all.loc[mask, "ExitReason"] = exit_reason
+                    df_all.loc[mask, "PnL_Pts"] = round(pnl_pts, 2)
+                    df_all.loc[mask, "Status"] = "CLOSED"
+                    df_all.to_csv(csv_file, index=False)
+            except Exception:
+                pass
+        self.active_real_trade_id = ""
+
+    def alert(self, text: str):
+        if self.is_backtest:
+            return
+        print(text)
+        tok, cid = CONFIG["TELEGRAM_BOT_TOKEN"], CONFIG["TELEGRAM_CHAT_ID"]
+        if tok and cid:
+            try:
+                requests.post(f"https://api.telegram.org/bot{tok}/sendMessage", json={"chat_id": cid, "text": text}, timeout=5)
+            except Exception:
+                pass
+
+    def manual_exit_now(self, current_price: float, bar_ts: dt.datetime, reason: str = "MANUAL_EXIT"):
+        if self.posSt == 0:
+            print("Koi active position nahi hai.")
+            return
+        sgn = 1 if self.posSt == 1 else -1
+        side_str = "CE" if self.posSt == 1 else "PE"
+        rem_ratio = (self.remainingLots / self.activeLots) if self.activeLots > 0 else 1.0
+        final_pnl = self.realizedTradePnl + sgn * (current_price - self.posEn) * rem_ratio
+
+        if self.remainingLots > 0:
+            self.broker.place_option_order(side_str, self.activeStrike, self.remainingLots, action="SELL", expiry_date=self.activeExpiry)
+
+        self._record_closed_trade(bar_ts, current_price, reason, final_pnl)
+        self.posSt = 0
+        self.posMv = False
+        self.t1Booked = False
+        self.remainingLots = 0
+        self.realizedTradePnl = 0.0
+        self.lastExit = self.bar_index
+
+    def _record_closed_trade(self, exit_ts: dt.datetime, exit_px: float, exit_reason: str, pnl_pts: float):
+        sgn = 1 if self.posSt == 1 else -1
+        mae = (self.posEn - self.tkLo) if sgn == 1 else (self.tkHi - self.posEn)
+        mfe = (self.tkHi - self.posEn) if sgn == 1 else (self.posEn - self.tkLo)
+
+        if pnl_pts > 0:
+            self.winN += 1
+            self.gp += pnl_pts
+        else:
+            self.lossN += 1
+            self.gl += abs(pnl_pts)
+
+        self.totPnl += pnl_pts
+        self.eqC += pnl_pts
+        self.eqPk = max(self.eqPk, self.eqC)
+        self.maxDD = max(self.maxDD, self.eqPk - self.eqC)
+
+        fb_pnl = (sgn * (exit_px - self.fbEn)) if not np.isnan(self.fbEn) else np.nan
+        ent_prob = self.entProbCE if sgn == 1 else self.entProbPE
+        self.trade_journal.append({
+            "EntryTime": self.entT.strftime("%Y-%m-%d %H:%M") if self.entT else "",
+            "ExitTime": exit_ts.strftime("%Y-%m-%d %H:%M"),
+            "Signal": self.entTx,
+            "Strike": f"{int(self.activeStrike)} ({PARAMS['strikeMode']})",
+            "Expiry": self.activeExpiry,
+            "EntryPx": round(self.posEn, 2),
+            "ExitPx": round(exit_px, 2),
+            "ExitReason": exit_reason,
+            "PnL_Pts": round(pnl_pts, 2),
+            "FB_PnL_Pts": round(fb_pnl, 2) if not np.isnan(fb_pnl) else None,
+            "OI_Prob%": round(ent_prob, 1),
+            "MAE": round(mae, 1),
+            "MFE": round(mfe, 1),
+            "ADX": round(self.entAdx, 1) if not np.isnan(self.entAdx) else 0,
+            "Breadth": round(self.entSc, 1) if not np.isnan(self.entSc) else 0,
+        })
+
+        self._dash_stats(exit_ts, exit_px, exit_reason, pnl_pts, sgn, mae, mfe, fb_pnl)
+        self._log_real_trade_exit(exit_ts, exit_px, exit_reason, pnl_pts)
+        log_line = f"{self.entTx} {self.entT.strftime('%d/%m %H:%M')} {exit_reason} {pnl_pts:+.1f}p P:{ent_prob:.0f}% A{self.entAdx:.0f} B{self.entSc:.0f}"
+        self.logs.insert(0, log_line)
+        self.logs = self.logs[:5]
+        self.alert(f"EXIT {self.entTx} ({int(self.activeStrike)} {PARAMS['strikeMode']}) @ {exit_px:.1f} ({exit_reason}) | Net P&L: {pnl_pts:+.1f} pts | Total Real Trades: {self.real_trade_count}")
+
+    def eval_timeframe(self, df: pd.DataFrame, is_5m: bool = False) -> dict:
+        c_s = df["close"]
+        ema9 = calc_ema(c_s, 9)
+        ema21 = calc_ema(c_s, 21)
+        ema50 = calc_ema(c_s, 50)
+        rsi = calc_rsi(c_s, 14)
+        sdir = calc_supertrend(df, 3.0, 10)
+        vw = calc_vwap(df)
+        diPl, diMi, adxV = calc_dmi(df, PARAMS["adxLen"])
+
+        c = c_s.iloc[-1]
+        e9, e21, e50 = ema9.iloc[-1], ema21.iloc[-1], ema50.iloc[-1]
+        r = rsi.iloc[-1]
+        sd = sdir.iloc[-1]
+        v = vw.iloc[-1]
+        vwOk = (not np.isnan(v)) and v > 0
+
+        bull = (1 if (e9 > e21 and c > e50) else 0) + (1 if (vwOk and c > v) else 0) + (1 if sd < 0 else 0) + (1 if r > 55 else 0)
+        bear = (1 if (e9 < e21 and c < e50) else 0) + (1 if (vwOk and c < v) else 0) + (1 if sd > 0 else 0) + (1 if r < 45 else 0)
+
+        orTxt = "N/A"
+        orH = orL = np.nan
+        orDone = False
+        if is_5m:
+            today = df.index[-1].date()
+            t_df = df[df.index.date == today]
+            dayBar = len(t_df)
+            orH = t_df["high"].iloc[:PARAMS["orBars"]].max() if len(t_df) > 0 else np.nan
+            orL = t_df["low"].iloc[:PARAMS["orBars"]].min() if len(t_df) > 0 else np.nan
+            orDone = dayBar > PARAMS["orBars"]
+
+            bull += (1 if (orDone and c > orH) else 0)
+            bear += (1 if (orDone and c < orL) else 0)
+            orTxt = "Forming" if not orDone else ("Break UP" if c > orH else ("Break DOWN" if c < orL else "Inside"))
+
+            maxC = 4 + (1 if vwOk else 0)
+            needE = min(PARAMS["needN"], maxC)
+        else:
+            maxC = 3 + (1 if vwOk else 0)
+            needE = min(PARAMS["mtfNeed"], maxC)
+
+        side = 1 if (bull >= needE and bull > bear) else (-1 if (bear >= needE and bear > bull) else 0)
+        arN = PARAMS["arN"]
+        adx_prev = adxV.iloc[-1 - arN] if len(adxV) > arN else np.nan
+
+        return {
+            "side": side, "bull": bull, "bear": bear, "maxC": maxC, "needE": needE,
+            "close": c, "ema9": e9, "ema21": e21, "ema50": e50, "rsi": r, "sdir": sd,
+            "vwap": v, "vwOk": vwOk, "orTxt": orTxt, "orH": orH, "orL": orL, "orDone": orDone,
+            "diPl": diPl.iloc[-1], "diMi": diMi.iloc[-1], "adx": adxV.iloc[-1], "adxPrev": adx_prev
+        }
+
+    def eval_breadth_and_sectors(self, changes: dict) -> dict:
+        wTot = wUp = wDn = wCt = 0.0
+        w10Tot = w10Up = w10Dn = 0.0
+        nUpC = nDnC = nOkC = 0
+
+        sec_ws = {k: 0.0 for k in SECTOR_MAP}
+        sec_wg = {k: 0.0 for k in SECTOR_MAP}
+        sec_cn = {k: 0 for k in SECTOR_MAP}
+        bkW = bkG = 0.0
+        bkN = 0
+
+        for idx, (sym, wt) in enumerate(BREADTH_STOCKS):
+            g = changes.get(sym, np.nan)
+            if not np.isnan(g):
+                nOkC += 1
+                wTot += wt
+                wCt += g * wt
+                if g > PARAMS["flatPct"]:
+                    wUp += wt
+                    nUpC += 1
+                elif g < -PARAMS["flatPct"]:
+                    wDn += wt
+                    nDnC += 1
+
+                if idx < 10:
+                    w10Tot += wt
+                    if g > PARAMS["flatPct"]: w10Up += wt
+                    elif g < -PARAMS["flatPct"]: w10Dn += wt
+
+                if wt > 0:
+                    for sname, members in SECTOR_MAP.items():
+                        if sym in members:
+                            sec_ws[sname] += wt
+                            sec_wg[sname] += wt * g
+                            sec_cn[sname] += 1
+                    if sym in BANK_STOCKS:
+                        bkW += wt
+                        bkG += wt * g
+                        bkN += 1
+
+        upPct = (wUp / wTot * 100.0) if wTot > 0 else np.nan
+        dnPct = (wDn / wTot * 100.0) if wTot > 0 else np.nan
+        up10Pct = (w10Up / w10Tot * 100.0) if w10Tot > 0 else np.nan
+        cntPct = (nUpC / (nUpC + nDnC) * 100.0) if (nUpC + nDnC) > 0 else 50.0
+        impl = (wCt / wTot) if wTot > 0 else np.nan
+        implPct = np.clip(50.0 + impl / PARAMS["implRef"] * 50.0, 0.0, 100.0) if not np.isnan(impl) else np.nan
+
+        score = (upPct * 0.45 + up10Pct * 0.25 + cntPct * 0.10 + implPct * 0.20) if not np.isnan(upPct) else np.nan
+        aligned = (not np.isnan(score)) and ((upPct > 50 and up10Pct > 50 and cntPct > 50) or (upPct < 50 and up10Pct < 50 and cntPct < 50))
+        bullHi = (not np.isnan(score)) and score >= PARAMS["hiTh"] and aligned
+        bearHi = (not np.isnan(score)) and score <= (100.0 - PARAMS["hiTh"]) and aligned
+
+        brTxt = "NO DATA" if np.isnan(score) else ("CE HIGH" if bullHi else ("PE HIGH" if bearHi else ("CE medium" if score >= 55 else ("PE medium" if score <= 45 else "NO TRADE"))))
+
+        sec_avg = {k: (sec_wg[k] / sec_ws[k]) if (sec_cn[k] > 0 and sec_ws[k] > 0) else np.nan for k in SECTOR_MAP}
+        scBk = (bkG / bkW) if (bkN > 0 and bkW > 0) else np.nan
+        scValid = sum(1 for v in sec_avg.values() if not np.isnan(v))
+
+        h0, h1, h2 = sec_avg["Financial Svc"], sec_avg["Oil & Gas"], sec_avg["IT"]
+        scUpN = sum(1 for v in (h0, h1, h2) if not np.isnan(v) and v >= PARAMS["scTh"])
+        scDnN = sum(1 for v in (h0, h1, h2) if not np.isnan(v) and v <= -PARAMS["scTh"])
+
+        scCE = (not PARAMS["scFeed"]) or (scValid == 0) or (scUpN >= PARAMS["scNeed"] and (not PARAMS["scBankOk"] or np.isnan(scBk) or scBk > -PARAMS["scTh"]))
+        scPE = (not PARAMS["scFeed"]) or (scValid == 0) or (scDnN >= PARAMS["scNeed"] and (not PARAMS["scBankOk"] or np.isnan(scBk) or scBk < PARAMS["scTh"]))
+
+        return {
+            "score": score, "brTxt": brTxt, "bullHi": bullHi, "bearHi": bearHi,
+            "upPct": upPct, "dnPct": dnPct, "nUpC": nUpC, "nDnC": nDnC, "impl": impl,
+            "secAvg": sec_avg, "scBk": scBk, "scCE": scCE, "scPE": scPE,
+            # --- dashboard extras ---
+            "up10": up10Pct, "dn10": ((w10Dn / w10Tot * 100.0) if w10Tot > 0 else np.nan),
+            "nOk": nOkC, "wTot": wTot, "aligned": aligned, "bkN": bkN, "scValid": scValid,
+            "secAvgL": [sec_avg[k] for k in SECTOR_MAP], "secCn": [sec_cn[k] for k in SECTOR_MAP],
+            "gs": [(sym, wt, changes.get(sym, np.nan)) for sym, wt in BREADTH_STOCKS],
+        }
+
+    def calc_oi_and_vol_probability(self, oc_pcr, vol_pcr, fut_s, near_call, near_put, breadth_score):
+        oi_norm = np.clip((oc_pcr - 1.0) / 0.35, -1.0, 1.0) if not np.isnan(oc_pcr) else 0.0
+        vol_norm = np.clip((vol_pcr - 1.0) / 0.40, -1.0, 1.0) if not np.isnan(vol_pcr) else 0.0
+        fut_norm = np.clip(fut_s, -1.0, 1.0) if PARAMS["futOiOn"] else 0.0
+        br_norm = np.clip((breadth_score - 50.0) / 30.0, -1.0, 1.0) if not np.isnan(breadth_score) else 0.0
+
+        raw_bias = (oi_norm * 0.30) + (vol_norm * 0.25) + (fut_norm * 0.25) + (br_norm * 0.20)
+        prob_ce = float(np.clip(50.0 + raw_bias * 50.0, 0.0, 100.0))
+        prob_pe = float(np.clip(50.0 - raw_bias * 50.0, 0.0, 100.0))
+
+        if near_call:
+            prob_ce = max(0.0, prob_ce - 20.0)
+        if near_put:
+            prob_pe = max(0.0, prob_pe - 20.0)
+
+        return prob_ce, prob_pe
+
+    def evaluate_bar_data(self, df_5m, df_3m, df_15m, df_1h, df_4h, df_d, df_fut, df_vix, stock_changes, oc_data, is_pre_alert: bool = False):
+        if not is_pre_alert:
+            self.bar_index += 1
+        bar_ts = df_5m.index[-1]
+        if not is_pre_alert:
+            self._fb_now = 0
+
+        t5 = self.eval_timeframe(df_5m, is_5m=True)
+        t3 = self.eval_timeframe(df_3m)
+        t15 = self.eval_timeframe(df_15m)
+        t1h = self.eval_timeframe(df_1h)
+        t4h = self.eval_timeframe(df_4h)
+
+        close = t5["close"]
+        high = df_5m["high"].iloc[-1]
+        low = df_5m["low"].iloc[-1]
+        open_p = df_5m["open"].iloc[-1]
+        atr10 = calc_atr(df_5m, 10).iloc[-1]
+        vol = df_5m["volume"].iloc[-1]
+        volAvg = calc_sma(df_5m["volume"], 20).iloc[-1]
+        volOk = (not np.isnan(vol)) and vol > 0 and (not np.isnan(volAvg)) and volAvg > 0
+
+        if not is_pre_alert and self.posSt != 0:
+            self.tkLo = min(self.tkLo, low)
+            self.tkHi = max(self.tkHi, high)
+
+        inWin = in_session(bar_ts, PARAMS["sess_start"], PARAMS["sess_end"])
+        techSide = t5["side"] if inWin else 0
+
+        mtfAgree = (techSide != 0) and (t3["side"] == techSide) and (not PARAMS["mtf15Req"] or t15["side"] == techSide)
+        techF = (techSide if mtfAgree else 0) if PARAMS["mtfOn"] else techSide
+        mDir = techF
+        if not is_pre_alert and (self.dirSince is None or mDir != self._prevDir):
+            self._prevDir = mDir
+            self.dirSince = bar_ts
+            self.dirSinceBar = self.bar_index
+        plusN = 0 if techSide == 0 else (
+            (1 if t1h["side"] == techSide else 0) +
+            (1 if t4h["side"] == techSide else 0) +
+            (1 if (not PARAMS["mtf15Req"] and t15["side"] == techSide) else 0)
+        )
+        plusTxt = "+++" if plusN >= 3 else ("++" if plusN == 2 else ("+" if plusN == 1 else ""))
+
+        diCE5 = (not np.isnan(t5["adx"])) and t5["adx"] > PARAMS["adxTrd"] and t5["diPl"] > PARAMS["diStrong"] and t5["diMi"] < PARAMS["diWeak"]
+        diPE5 = (not np.isnan(t5["adx"])) and t5["adx"] > PARAMS["adxTrd"] and t5["diMi"] > PARAMS["diStrong"] and t5["diPl"] < PARAMS["diWeak"]
+        diCEA = (not np.isnan(t3["adx"])) and t3["adx"] > PARAMS["adxTrd"] and t3["diPl"] > PARAMS["diStrong"] and t3["diMi"] < PARAMS["diWeak"]
+        diPEA = (not np.isnan(t3["adx"])) and t3["adx"] > PARAMS["adxTrd"] and t3["diMi"] > PARAMS["diStrong"] and t3["diPl"] < PARAMS["diWeak"]
+        diCEB = (not np.isnan(t15["adx"])) and t15["adx"] > PARAMS["adxTrd"] and t15["diPl"] > PARAMS["diStrong"] and t15["diMi"] < PARAMS["diWeak"]
+        diPEB = (not np.isnan(t15["adx"])) and t15["adx"] > PARAMS["adxTrd"] and t15["diMi"] > PARAMS["diStrong"] and t15["diPl"] < PARAMS["diWeak"]
+
+        diOkCE = (not PARAMS["diOn"]) or (((1 if diCE5 else 0) + (1 if diCEA else 0) + (1 if diCEB else 0)) >= PARAMS["diNeed"] if PARAMS["diMtf"] else diCE5)
+        diOkPE = (not PARAMS["diOn"]) or (((1 if diPE5 else 0) + (1 if diPEA else 0) + (1 if diPEB else 0)) >= PARAMS["diNeed"] if PARAMS["diMtf"] else diPE5)
+        adxOk = (not PARAMS["adxOn"]) or np.isnan(t5["adx"]) or t5["adx"] >= PARAMS["adxMin"]
+
+        sma20_d = calc_sma(df_d["close"], PARAMS["dgLen"])
+        d1, d2 = PARAMS["dgD1"], PARAMS["dgD2"]
+        dgM1, dgM1p = sma20_d.iloc[-1 - d1], sma20_d.iloc[-2 - d1]
+        dgM2, dgM2p = sma20_d.iloc[-1 - d2], sma20_d.iloc[-2 - d2]
+        dgYL, dgYM, dgYH = df_d["low"].iloc[-2], sma20_d.iloc[-2], df_d["high"].iloc[-2]
+
+        dgS1 = (dgM1 - dgM1p) / dgM1p * 100.0
+        dgS2 = (dgM2 - dgM2p) / dgM2p * 100.0
+        dgUp = dgS1 > PARAMS["dgFlat"] and dgS2 > PARAMS["dgFlat"]
+        dgDn = dgS1 < -PARAMS["dgFlat"] and dgS2 < -PARAMS["dgFlat"]
+        dgCE = (not PARAMS["dgOn"]) or (PARAMS["dgMode"] == "Sirf PE par") or dgUp
+        dgPE = (not PARAMS["dgOn"]) or (PARAMS["dgMode"] == "Sirf CE par") or dgDn
+
+        oiLook = PARAMS["oiLook"]
+        futS = 0.0
+        futTxt = "OFF" if not PARAMS["futOiOn"] else "N/A (OI data nahi)"
+        if PARAMS["futOiOn"] and len(df_fut) > oiLook:
+            pxCh = df_fut["close"].iloc[-1] - df_fut["close"].iloc[-1 - oiLook]
+            oiCh = df_fut["oi"].iloc[-1] - df_fut["oi"].iloc[-1 - oiLook]
+            if oiCh != 0:
+                futS = 1.0 if (pxCh > 0 and oiCh > 0) else (0.5 if (pxCh > 0 and oiCh < 0) else (-1.0 if (pxCh < 0 and oiCh > 0) else (-0.5 if (pxCh < 0 and oiCh < 0) else 0.0)))
+                futTxt = "Long Buildup (+1)" if futS == 1.0 else ("Short Covering (+0.5)" if futS == 0.5 else ("Short Buildup (-1)" if futS == -1.0 else "Long Unwinding (-0.5)"))
+
+        atmNow = round(close / PARAMS["optStep"]) * PARAMS["optStep"]
+        strikeCE = get_trade_strike(close, "CE")
+        strikePE = get_trade_strike(close, "PE")
+        selected_exp = oc_data.get("expiry", "") or (self.broker.get_selected_expiry() if not self.is_backtest else "BT_EXP")
+
+        if self.ovCtr is None and atmNow > 0:
+            self.ovCtr = atmNow
+
+        oc_span = clamp_strike_span(PARAMS["ocN"])
+        ov_span = clamp_strike_span(PARAMS["ovN"])
+
+        ocOk = PARAMS["autoOc"] and oc_data.get("ocOk", False)
+        volOk_pcr = PARAMS["ovOn"] and oc_data.get("volOk", False)
+        ovUseF = volOk_pcr and PARAMS["ovFeed"]
+
+        if ocOk:
+            ocPcrVal = oc_data["ocPcr"]
+        elif PARAMS["pcrIn"] > 0:
+            ocPcrVal = PARAMS["pcrIn"]
+        else:
+            ocPcrVal = np.nan
+
+        volPcrVal = oc_data["volPcr"] if volOk_pcr else np.nan
+        pcrS = 0.0 if np.isnan(ocPcrVal) else (1.0 if ocPcrVal >= PARAMS["pcrBull"] else (-1.0 if ocPcrVal <= PARAMS["pcrBear"] else 0.0))
+        volS = oc_data["volSig"] if ovUseF else 0.0
+        oiScore = pcrS + futS + volS
+
+        callEff = oc_data["ocCallK"] if (ocOk and not np.isnan(oc_data.get("ocCallK", np.nan))) else (
+            oc_data["volCallK"] if (ovUseF and not np.isnan(oc_data.get("volCallK", np.nan))) else (
+                PARAMS["callWall"] if PARAMS["callWall"] > 0 else np.nan
+            )
+        )
+        putEff = oc_data["ocPutK"] if (ocOk and not np.isnan(oc_data.get("ocPutK", np.nan))) else (
+            oc_data["volPutK"] if (ovUseF and not np.isnan(oc_data.get("volPutK", np.nan))) else (
+                PARAMS["putWall"] if PARAMS["putWall"] > 0 else np.nan
+            )
+        )
+
+        nearCall = (not np.isnan(callEff)) and (0.0 <= (callEff - close) / close * 100.0 <= PARAMS["wallBuf"])
+        nearPut = (not np.isnan(putEff)) and (0.0 <= (close - putEff) / close * 100.0 <= PARAMS["wallBuf"])
+        oiOkCE = (not nearCall) and (oiScore > -1)
+        oiOkPE = (not nearPut) and (oiScore < 1)
+
+        br = self.eval_breadth_and_sectors(stock_changes)
+        score = br["score"]
+        hasBr = not np.isnan(score)
+
+        probCE, probPE = self.calc_oi_and_vol_probability(ocPcrVal, volPcrVal, futS, nearCall, nearPut, score)
+
+        if not inWin:
+            fin = "OFF TIME"
+        elif mDir == 1:
+            if not oiOkCE: fin = "SKIP (OI against CE)"
+            elif not hasBr: fin = "CE BUY (breadth data nahi)"
+            elif br["bullHi"] and oiScore >= 0: fin = "CE BUY - HIGH PROB"
+            elif score >= 55: fin = "CE BUY - medium"
+            else: fin = "SKIP (breadth weak)"
+        elif mDir == -1:
+            if not oiOkPE: fin = "SKIP (OI against PE)"
+            elif not hasBr: fin = "PE BUY (breadth data nahi)"
+            elif br["bearHi"] and oiScore <= 0: fin = "PE BUY - HIGH PROB"
+            elif score <= 45: fin = "PE BUY - medium"
+            else: fin = "SKIP (breadth weak)"
+        else:
+            fin = "WAIT"
+
+        if PARAMS["requireHighProbOnly"]:
+            sigCE = (fin == "CE BUY - HIGH PROB")
+            sigPE = (fin == "PE BUY - HIGH PROB")
+        else:
+            sigCE = fin.startswith("CE BUY")
+            sigPE = fin.startswith("PE BUY")
+
+        probOkCE = (not PARAMS["oiProbFilterOn"]) or (probCE >= PARAMS["minOiProbCE"])
+        probOkPE = (not PARAMS["oiProbFilterOn"]) or (probPE >= PARAMS["minOiProbPE"])
+
+        # G8 (v22 Upgrades) Evaluation
+        rng5 = high - low
+        cpos = ((close - low) / rng5) if rng5 > 0 else 0.5
+        tmBlkR = (in_session(bar_ts, *PARAMS["tmS1"]) or in_session(bar_ts, *PARAMS["tmS2"]) or in_session(bar_ts, *PARAMS["tmS3"]))
+        exBlkR = (bar_ts.weekday() == DOW_MAP[PARAMS["exDay"]])
+
+        rawLateCE = (not np.isnan(t5["adx"])) and hasBr and t5["adx"] >= PARAMS["lateAdx"] and score >= PARAMS["lateBr"]
+        rawLatePE = (not np.isnan(t5["adx"])) and hasBr and t5["adx"] >= PARAMS["lateAdx"] and score <= (100.0 - PARAMS["lateBr"])
+        rawAr = np.isnan(t5["adx"]) or np.isnan(t5["adxPrev"]) or (t5["adx"] > t5["adxPrev"])
+        rawRsiCE = np.isnan(t5["rsi"]) or t5["rsi"] <= PARAMS["rsiHi"]
+        rawRsiPE = np.isnan(t5["rsi"]) or t5["rsi"] >= PARAMS["rsiLo"]
+        rawCdCE = cpos >= PARAMS["cdPos"]
+        rawCdPE = cpos <= (1.0 - PARAMS["cdPos"])
+        rawVol = (not volOk) or (vol >= volAvg * PARAMS["vfMult"])
+
+        pdhNear = (0 <= (dgYH - close) / close * 100.0 <= PARAMS["lvlBuf"])
+        pdlNear = (0 <= (close - dgYL) / close * 100.0 <= PARAMS["lvlBuf"])
+        rdUpNear = (math.ceil(close / PARAMS["rdStep"]) * PARAMS["rdStep"] - close) <= PARAMS["rdPts"]
+        rdDnNear = (close - math.floor(close / PARAMS["rdStep"]) * PARAMS["rdStep"]) <= PARAMS["rdPts"]
+
+        today_open = df_5m[df_5m.index.date == bar_ts.date()]["open"].iloc[0]
+        rawOpCE = close > today_open
+
+        vxLook = PARAMS["vxLook"]
+        vix_now = df_vix["close"].iloc[-1] if not df_vix.empty else np.nan
+        vix_prev = df_vix["close"].iloc[-1 - vxLook] if len(df_vix) > vxLook else np.nan
+        rawVxCE = np.isnan(vix_now) or np.isnan(vix_prev) or vix_now <= vix_prev
+        rawVxPE = np.isnan(vix_now) or np.isnan(vix_prev) or vix_now >= vix_prev
+
+        v22CE = (not PARAMS["lateOn"] or not rawLateCE) and (not PARAMS["arOn"] or rawAr) and (not PARAMS["rsiOn"] or rawRsiCE) and (not PARAMS["cdOn"] or rawCdCE) and (not PARAMS["vfOn"] or rawVol) and not ((PARAMS["lvlOn"] and pdhNear) or (PARAMS["rdOn"] and rdUpNear)) and (not PARAMS["opOn"] or rawOpCE) and (not PARAMS["vxOn"] or rawVxCE) and not (PARAMS["tmOn"] and tmBlkR) and not (PARAMS["exOn"] and exBlkR)
+        v22PE = (not PARAMS["lateOn"] or not rawLatePE) and (not PARAMS["arOn"] or rawAr) and (not PARAMS["rsiOn"] or rawRsiPE) and (not PARAMS["cdOn"] or rawCdPE) and (not PARAMS["vfOn"] or rawVol) and not ((PARAMS["lvlOn"] and pdlNear) or (PARAMS["rdOn"] and rdDnNear)) and (not PARAMS["vxOn"] or rawVxPE) and not (PARAMS["tmOn"] and tmBlkR) and not (PARAMS["exOn"] and exBlkR)
+
+        gdCE = (0 if rawLateCE else 1) + (1 if rawAr else 0) + (1 if rawRsiCE else 0) + (1 if rawCdCE else 0) + (1 if rawVol else 0) + (0 if (pdhNear or rdUpNear) else 1) + (1 if rawOpCE else 0) + (1 if rawVxCE else 0) + (0 if tmBlkR else 1)
+        gdPE = (0 if rawLatePE else 1) + (1 if rawAr else 0) + (1 if rawRsiPE else 0) + (1 if rawCdPE else 0) + (1 if rawVol else 0) + (0 if (pdlNear or rdDnNear) else 1) + (1 if (not PARAMS["peBelowOpen"] or close < today_open) else 0) + (1 if rawVxPE else 0) + (0 if tmBlkR else 1)
+        grade_str = f"CE:{'A' if gdCE>=PARAMS['gdA'] else ('B' if gdCE>=PARAMS['gdB'] else 'C')}({gdCE}/9) | PE:{'A' if gdPE>=PARAMS['gdA'] else ('B' if gdPE>=PARAMS['gdB'] else 'C')}({gdPE}/9)"
+
+        coolOk = (self.bar_index - self.lastExit) >= PARAMS["coolBars"]
+        stCE = t5["sdir"] < 0
+        stPE = t5["sdir"] > 0
+        extOk = abs(close - t5["ema21"]) <= atr10 * PARAMS["extMult"]
+
+        peHtfOk = (PARAMS["peHtf"] == "OFF") or (t1h["side"] == -1 if PARAMS["peHtf"] == "1h PE" else (t1h["side"] == -1 and t4h["side"] == -1))
+        peOk = (not hasBr or score <= PARAMS["peBrMax"]) and (np.isnan(t5["adx"]) or t5["adx"] >= PARAMS["peAdxMin"]) and peHtfOk and (not PARAMS["peBelowOpen"] or close < today_open)
+        peScore = (1 if dgDn else 0) + (1 if close < dgYM else 0) + (1 if close < dgYL else 0) + (1 if (t1h["side"] == -1 and t4h["side"] == -1) else 0) + (1 if oiScore < 0 else 0)
+        peScOk = (PARAMS["peScMin"] == 0) or (peScore >= PARAMS["peScMin"])
+
+        is_idle = (self.posSt == 0) and (self.wSt == 0 if (self.is_backtest and self.bt_entry_mode == "REAL_BLUE_ONLY") else True)
+        entCE = is_idle and sigCE and probOkCE and self.armCE and coolOk and extOk and stCE and adxOk and PARAMS["allowCE"] and diOkCE and dgCE and br["scCE"] and v22CE
+        entPE = is_idle and sigPE and probOkPE and self.armPE and coolOk and extOk and stPE and adxOk and PARAMS["allowPE"] and peOk and diOkPE and dgPE and peScOk and br["scPE"] and v22PE
+
+        if is_pre_alert:
+            if (entCE or entPE) and self.last_pre_alert_bar != self.bar_index:
+                self.last_pre_alert_bar = self.bar_index
+                side_p = "CE" if entCE else "PE"
+                strk_p = strikeCE if entCE else strikePE
+                p_val = probCE if entCE else probPE
+                self.alert(f"PRE-ALERT: {side_p} ({int(strk_p)} {PARAMS['strikeMode']} | Exp: {selected_exp}) ban raha hai @ {close:.1f} (Prob: {p_val:.0f}%)")
+            self._dash_pre(entCE, entPE)
+            return
+
+        # ======================================================================
+        # EXIT LOGIC: T1, T2, T1_T2 (PARTIAL), MANUAL, SL, SUPERTREND, TIME
+        # ======================================================================
+        sgn = -1 if self.posSt == -1 else 1
+        exit_mode = PARAMS["exitMode"].upper()
+        if PARAMS["trOn"] and exit_mode == "T1":
+            exit_mode = "T2"
+
+        chk_high = high if PARAMS["useHighLowForTarget"] else close
+        chk_low = low if PARAMS["useHighLowForTarget"] else close
+
+        slHit = self.posSt != 0 and (close <= self.posSl if sgn == 1 else close >= self.posSl)
+        t1Touch = self.posSt != 0 and (chk_high >= self.posT1 if sgn == 1 else chk_low <= self.posT1)
+        t2Touch = self.posSt != 0 and (chk_high >= self.posT2 if sgn == 1 else chk_low <= self.posT2)
+        trendBad = self.posSt != 0 and ((t5["sdir"] > 0) if self.posSt == 1 else (t5["sdir"] < 0))
+
+        if self.posSt != 0 and exit_mode == "T1_T2" and t1Touch and not self.t1Booked:
+            pct = PARAMS["t1ExitPct"] / 100.0
+            lots_to_book = max(1, int(round(self.activeLots * pct))) if self.activeLots > 1 else 1
+            booked_ratio = (lots_to_book / self.activeLots) if self.activeLots > 0 else pct
+            t1_px = self.posT1 if PARAMS["useHighLowForTarget"] else close
+            self.realizedTradePnl += sgn * (t1_px - self.posEn) * booked_ratio
+            self.remainingLots = max(0, self.activeLots - lots_to_book)
+            self.t1Booked = True
+            self.posSl = self.posEn
+            self.posMv = True
+            side_str = "CE" if self.posSt == 1 else "PE"
+            self.broker.place_option_order(side_str, self.activeStrike, lots_to_book, action="SELL", expiry_date=self.activeExpiry)
+            self.alert(f"T1 PARTIAL BOOKED ({PARAMS['t1ExitPct']}%) @ {t1_px:.1f} | Remaining trailing to T2 ({self.posT2:.1f}), SL at Entry ({self.posSl:.1f})")
+            if self.remainingLots == 0:
+                self._record_closed_trade(bar_ts, t1_px, "T1_FULL", self.realizedTradePnl)
+                self.posSt = 0
+                self.posMv = False
+                self.t1Booked = False
+                self.realizedTradePnl = 0.0
+                self.lastExit = self.bar_index
+
+        target_exit_triggered = False
+        target_exit_px = close
+        target_exit_label = ""
+
+        if self.posSt != 0:
+            if exit_mode == "T1" and t1Touch:
+                target_exit_triggered = True
+                target_exit_px = self.posT1 if PARAMS["useHighLowForTarget"] else close
+                target_exit_label = "T1"
+            elif exit_mode in ("T2", "T1_T2") and t2Touch:
+                target_exit_triggered = True
+                target_exit_px = self.posT2 if PARAMS["useHighLowForTarget"] else close
+                target_exit_label = "T2"
+
+        if self.posSt != 0 and not target_exit_triggered and not slHit:
+            candBE = (self.posEn + sgn * PARAMS["beLock"] * self.posR) if (PARAMS["beOn"] and ((close >= self.posEn + PARAMS["beR"] * self.posR) if sgn == 1 else (close <= self.posEn - PARAMS["beR"] * self.posR))) else np.nan
+            candT1 = (self.posEn + sgn * self.posR) if (exit_mode == "T2" and t1Touch) else np.nan
+            if sgn == 1:
+                newSl = max(self.posSl, np.nanmax([self.posSl, candBE, candT1]))
+                if newSl > self.posSl:
+                    self.posSl = newSl
+                    self.posMv = True
+            else:
+                newSl = min(self.posSl, np.nanmin([self.posSl, candBE, candT1]))
+                if newSl < self.posSl:
+                    self.posSl = newSl
+                    self.posMv = True
+
+        exitNow = self.posSt != 0 and (slHit or target_exit_triggered or trendBad or not inWin)
+        if exitNow:
+            if target_exit_triggered:
+                exRes = target_exit_label
+                exPx = target_exit_px
+            elif slHit:
+                exRes = "TSL" if self.posMv else "SL"
+                exPx = close
+            elif trendBad:
+                exRes = "Trend"
+                exPx = close
+            else:
+                exRes = "Time"
+                exPx = close
+
+            rem_ratio = (self.remainingLots / self.activeLots) if self.activeLots > 0 else 1.0
+            total_trade_pnl = self.realizedTradePnl + sgn * (exPx - self.posEn) * rem_ratio
+            side_str = "CE" if self.posSt == 1 else "PE"
+
+            if self.remainingLots > 0:
+                self.broker.place_option_order(side_str, self.activeStrike, self.remainingLots, action="SELL", expiry_date=self.activeExpiry)
+
+            self._record_closed_trade(bar_ts, exPx, exRes, total_trade_pnl)
+            self.posSt = 0
+            self.posMv = False
+            self.t1Booked = False
+            self.remainingLots = 0
+            self.realizedTradePnl = 0.0
+            self.lastExit = self.bar_index
+
+        if not inWin: why = "Window band"
+        elif self.posSt != 0: why = f"Trade chal rahi (ExitMode: {exit_mode})"
+        elif techSide == 0: why = f"Tech {max(t5['bull'], t5['bear'])}/{t5['maxC']} need {t5['needE']}"
+        elif mDir == 0: why = "3m/15m agree nahi" if (techSide != 0 and techF == 0) else "Trend ulta"
+        elif not (sigCE or sigPE): why = fin
+        elif (sigCE and not probOkCE): why = f"OI+Vol Prob {probCE:.0f}% < {PARAMS['minOiProbCE']:.0f}%"
+        elif (sigPE and not probOkPE): why = f"OI+Vol Prob {probPE:.0f}% < {PARAMS['minOiProbPE']:.0f}%"
+        elif not extOk: why = "Price EMA se door"
+        elif (sigCE and not stCE) or (sigPE and not stPE): why = "Supertrend ulta"
+        elif not coolOk: why = "Cooldown"
+        elif (sigCE and not self.armCE) or (sigPE and not self.armPE): why = "Signal use ho chuka"
+        elif (sigCE or sigPE) and not adxOk: why = f"Sideways ADX {t5['adx']:.0f} < {PARAMS['adxMin']:.0f}"
+        elif (sigCE and not diOkCE) or (sigPE and not diOkPE): why = f"DI/ADX filter ({PARAMS['diNeed']} of 3 TF)"
+        elif (sigCE and not dgCE) or (sigPE and not dgPE): why = f"Daily gate 7d:{dgS1:+.2f}% 5d:{dgS2:+.2f}%"
+        elif sigPE and dgPE and not peScOk: why = f"PE score {peScore}/5 (need {PARAMS['peScMin']})"
+        elif (sigCE and not br["scCE"]) or (sigPE and not br["scPE"]): why = "Sector signal ke khilaf"
+        elif not v22CE or not v22PE: why = "v22 filter block"
+        else: why = "Signal OK"
+
+        slD = atr10 * PARAMS["slMult"]
+        riskRs = PARAMS["capital"] * PARAMS["riskPct"] / 100.0
+        lotRisk = slD * PARAMS["optDelta"] * PARAMS["optLot"]
+        lots = max(1, int(math.floor(riskRs / lotRisk))) if lotRisk > 0 else 1
+
+        # STEP 1: INITIAL SIGNAL (GREEN / RED ARROW) -> WATCH START
+        fb_msg = "-- | " + self.wLast
+        if entCE or entPE:
+            lvS = 1 if entCE else -1
+            side_lbl = "CE" if entCE else "PE"
+            arrow_icon = "[GREEN ARROW]" if entCE else "[RED ARROW]"
+            ent_prob = probCE if entCE else probPE
+            chosen_strike = strikeCE if entCE else strikePE
+            init_sl = close - lvS * slD
+            self.events.append(dict(t=bar_ts, k="BUY CE" if entCE else "BUY PE", text=side_lbl + plusTxt, p=plusN))
+            self.lastSigT, self.lastSigTx, self.lastSigBar = bar_ts, side_lbl + plusTxt, self.bar_index
+
+            if not (self.is_backtest and self.bt_entry_mode == "REAL_BLUE_ONLY"):
+                self.posSt = lvS
+                self.posEn = close
+                self.posSl = init_sl
+                self.posT1 = close + lvS * slD * PARAMS["rrT"]
+                self.posT2 = close + lvS * slD * (PARAMS["rrT"] + 1.0)
+                self.posR = slD
+                self.tkLo = low
+                self.tkHi = high
+                self.t1Booked = False
+                self.realizedTradePnl = 0.0
+                self.activeStrike = chosen_strike
+                self.activeExpiry = selected_exp
+                self.activeLots = lots
+                self.remainingLots = lots
+
+                self.entTx = side_lbl + plusTxt
+                self.entT = bar_ts
+                self.entAdx = t5["adx"]
+                self.entSc = score
+                self.entProbCE = probCE
+                self.entProbPE = probPE
+
+            if PARAMS["wfOn"]:
+                self.wSt = lvS
+                self.wNsig += 1
+                self.wBar = self.bar_index
+                self.wSigC = close
+                self.wSl = init_sl
+                self.wExt = close
+                self.wCloses = [close]
+                self.fbEn = np.nan
+                self.wPendingSide = side_lbl
+                self.wPendingStrike = chosen_strike
+                self.wPendingExpiry = selected_exp
+                self.wPendingLots = lots
+                self.wPendingPlus = plusTxt
+                self.wPendingAdx = t5["adx"]
+                self.wPendingSc = score
+                self.wPendingProbCE = probCE
+                self.wPendingProbPE = probPE
+                fb_msg = f"WATCH {side_lbl} STARTED (Waiting for Blue Arrow)"
+            else:
+                order_ok = self.broker.place_option_order(side_lbl, chosen_strike, lots, action="BUY", expiry_date=selected_exp)
+                self._log_real_trade_entry(bar_ts, side_lbl, chosen_strike, selected_exp, lots, close, ent_prob, order_ok)
+
+            self.alert(
+                f"{arrow_icon} STEP 1: INITIAL {side_lbl} SIGNAL ({fin}) @ {close:.1f} | Prob: {ent_prob:.0f}%\n"
+                f"Strike: {int(chosen_strike)} {side_lbl} ({PARAMS['strikeMode']}) | Expiry: {selected_exp} ({PARAMS['expiryMode']})\n"
+                f"WATCH MODE ON - Final Buy (Blue Arrow) ki calculation chal rahi hai...\n"
+                f"Exit Mode: {exit_mode} | SL: {init_sl:.1f} | T1: {close + lvS * slD * PARAMS['rrT']:.1f} | T2: {close + lvS * slD * (PARAMS['rrT'] + 1.0):.1f}"
+            )
+
+        # STEP 2 & 3: CALCULATION -> FINAL BUY TRADE (BLUE ARROW)
+        elif PARAMS["wfOn"] and self.wSt != 0:
+            self.wExt = min(self.wExt, low) if self.wSt == 1 else max(self.wExt, high)
+            self.wCloses.append(close)
+
+            wTouch = ((low <= self.wSl if PARAMS["wfWick"] else close <= self.wSl) if self.wSt == 1
+                      else (high >= self.wSl if PARAMS["wfWick"] else close >= self.wSl))
+            wGone = (self.posSt == 0) and not (self.is_backtest and self.bt_entry_mode == "REAL_BLUE_ONLY")
+            wExp = (self.bar_index - self.wBar) > max(PARAMS["wfMax"], PARAMS["wfMin"])
+
+            if wTouch or wGone or wExp:
+                reason = "Dip ne SL touch kiya" if wTouch else ("Trade pehle khatam" if wGone else "Time out (20 bars)")
+                self.wLast = f"Nahi: {reason}"
+                self.wNcan += 1
+                self.wSt = 0
+                fb_msg = "-- | " + self.wLast
+                self.alert(f"[WATCH CANCELLED] ({reason}) - Final Buy Blue Arrow nahi bana.")
+            else:
+                rule = PARAMS["wfRule"]
+                wCrvC = (self.wSigC - self.wExt >= PARAMS["wfDip"] * atr10) and (high > low) and (close > open_p or (min(open_p, close) - low) >= PARAMS["wfWk"] / 100.0 * (high - low))
+                wCrvP = (self.wExt - self.wSigC >= PARAMS["wfDip"] * atr10) and (high > low) and (close < open_p or (high - max(open_p, close)) >= PARAMS["wfWk"] / 100.0 * (high - low))
+                wCrvEC = (self.wExt < self.wSigC) and (close > open_p) and (close > self.wCloses[-2])
+                wCrvEP = (self.wExt > self.wSigC) and (close < open_p) and (close < self.wCloses[-2])
+
+                wUpTh = PARAMS["wfUpPts"] if PARAMS["wfUpPts"] > 0 else PARAMS["wfUp"] * atr10
+                wUpC = (wUpTh > 0) and (self.bar_index - self.wBar >= 2) and (close > open_p) and (close >= self.wSigC + wUpTh)
+                wUpP = (wUpTh > 0) and (self.bar_index - self.wBar >= 2) and (close < open_p) and (close <= self.wSigC - wUpTh)
+
+                smaF = pd.Series(self.wCloses).rolling(PARAMS["wfF"]).mean().iloc[-1] if len(self.wCloses) >= PARAMS["wfF"] else np.mean(self.wCloses)
+                smaS = pd.Series(self.wCloses).rolling(PARAMS["wfS"]).mean().iloc[-1] if len(self.wCloses) >= PARAMS["wfS"] else np.mean(self.wCloses)
+
+                if self.wSt == 1:
+                    raw_ok = (wCrvEC or wUpC) if rule == "E" else (smaF > smaS if rule == "D" else (wCrvC if rule == "C" else (close >= self.wExt + PARAMS["wfA"] * atr10 if rule == "A" else close > self.wSigC)))
+                else:
+                    raw_ok = (wCrvEP or wUpP) if rule == "E" else (smaF < smaS if rule == "D" else (wCrvP if rule == "C" else (close <= self.wExt - PARAMS["wfA"] * atr10 if rule == "A" else close < self.wSigC)))
+
+                if raw_ok and (self.bar_index - self.wBar >= PARAMS["wfMin"]):
+                    fb_side = "CE" if self.wSt == 1 else "PE"
+                    lvS = self.wSt
+                    pts = lvS * (close - self.wSigC)
+                    ent_prob = self.wPendingProbCE if lvS == 1 else self.wPendingProbPE
+                    self.wLast = "FINAL BUY"
+                    self.fbEn = close
+                    self.wNfin += 1
+                    self._fb_now = lvS
+                    self.events.append(dict(t=bar_ts, k="FINAL BUY " + fb_side, text=f"{pts:+.0f}p"))
+                    fb_msg = f">>> FINAL BUY {fb_side} ({pts:+.1f}p | Prob:{ent_prob:.0f}%) <<<"
+
+                    if self.is_backtest and self.bt_entry_mode == "REAL_BLUE_ONLY":
+                        self.posSt = lvS
+                        self.posEn = close
+                        self.posSl = close - lvS * slD
+                        self.posT1 = close + lvS * slD * PARAMS["rrT"]
+                        self.posT2 = close + lvS * slD * (PARAMS["rrT"] + 1.0)
+                        self.posR = slD
+                        self.tkLo = low
+                        self.tkHi = high
+                        self.t1Booked = False
+                        self.realizedTradePnl = 0.0
+                        self.activeStrike = self.wPendingStrike
+                        self.activeExpiry = self.wPendingExpiry
+                        self.activeLots = self.wPendingLots
+                        self.remainingLots = self.wPendingLots
+                        self.entTx = f"FB_{fb_side}{self.wPendingPlus}"
+                        self.entT = bar_ts
+                        self.entAdx = self.wPendingAdx
+                        self.entSc = self.wPendingSc
+                        self.entProbCE = self.wPendingProbCE
+                        self.entProbPE = self.wPendingProbPE
+
+                    order_ok = self.broker.place_option_order(fb_side, self.activeStrike, self.activeLots, action="BUY", expiry_date=self.activeExpiry)
+                    self._log_real_trade_entry(bar_ts, fb_side, self.activeStrike, self.activeExpiry, self.activeLots, close, ent_prob, order_ok)
+
+                    self.alert(
+                        f"[BLUE ARROW] STEP 2: FINAL BUY {fb_side} CONFIRMED @ {close:.1f} ({pts:+.1f}p) | Prob: {ent_prob:.0f}%\n"
+                        f"REAL TRADE #{self.real_trade_count} | NIFTY [{self.activeExpiry}] {int(self.activeStrike)} {fb_side} ({PARAMS['strikeMode']}) | Lots: {self.activeLots}\n"
+                        f"Broker Order Sent: {order_ok} | Exit Mode: {exit_mode} | SL: {self.posSl:.1f} | T1: {self.posT1:.1f} | T2: {self.posT2:.1f}"
+                    )
+                    self.wSt = 0
+                else:
+                    fb_msg = f"WATCH {'CE' if self.wSt==1 else 'PE'} bar {self.bar_index - self.wBar}/{PARAMS['wfMax']} dip {abs(self.wSigC - self.wExt):.0f}"
+
+        self.armCE = (self.armCE and not entCE) if sigCE else True
+        self.armPE = (self.armPE and not entPE) if sigPE else True
+
+        self._dash_capture(locals())          # dashboard ke liye state save
+
+        if not self.is_backtest:
+            s_txt = lambda x: "CE" if x == 1 else ("PE" if x == -1 else "-")
+            print("=" * 82)
+            print(f"NIFTY OPT PRO v28 (5m) | {bar_ts.strftime('%Y-%m-%d %H:%M IST')} | LTP: {close:.2f}")
+            print(f"REAL TRADES TAKEN: {self.real_trade_count} (Live Broker Orders: {self.real_live_orders_sent}) | Strike: {PARAMS['strikeMode']} | Exp: {selected_exp} | Exit: {exit_mode}")
+            print(f"MTF 3m/5m/15m: {s_txt(t3['side'])} / {s_txt(t5['side'])} / {s_txt(t15['side'])} | 1h/4h: {s_txt(t1h['side'])} / {s_txt(t4h['side'])}")
+            print(f"Signal: {fin} {plusTxt} | Breadth: {score:.0f} ({br['brTxt']}) | Grade: {grade_str}")
+            print(f"OI+VOL PROBABILITY: CE {probCE:.0f}% | PE {probPE:.0f}% (Filter: {'ON' if PARAMS['oiProbFilterOn'] else 'OFF'})")
+            print(f"Option OI (+-{oc_span} strk): {ocPcrVal:.2f} (S:{putEff:.0f} R:{callEff:.0f}) | VOL PCR (+-{ov_span} strk): {volPcrVal:.2f} | Fut OI: {futTxt}")
+            print(f"WATCH / FINAL: {fb_msg}")
+            if self.posSt != 0:
+                print(f"ACTIVE POSITION: {int(self.activeStrike)} {'CE' if self.posSt==1 else 'PE'} [{self.activeExpiry}] | Entry: {self.posEn:.1f} | SL: {self.posSl:.1f} | T1: {self.posT1:.1f} | T2: {self.posT2:.1f} | RemLots: {self.remainingLots}/{self.activeLots}")
+            print(f"ADX(14): {t5['adx']:.1f} (D+:{t5['diPl']:.0f} D-:{t5['diMi']:.0f}) | OR: {t5['orTxt']} | Kyu nahi?: {why}")
+            print(f"Lots: {lots} | Session Log W/L: {self.winN}/{self.lossN} ({self.totPnl:+.1f}p)")
+            print("=" * 82)
+
+    def process_live_bar(self, is_pre_alert: bool = False):
+        now_ist = dt.datetime.now(IST)
+        main_sym = CONFIG["CHART_SYMBOL"]
+
+        df_5m = self.broker.get_candles(main_sym, interval="5", days=7)
+        if df_5m.empty or len(df_5m) < 60:
+            return
+        if not is_pre_alert and df_5m.index[-1] > now_ist - dt.timedelta(minutes=5):
+            df_5m = df_5m.iloc[:-1]
+
+        df_3m = self.broker.get_candles(main_sym, interval="3", days=5)
+        df_15m = self.broker.get_candles(main_sym, interval="15", days=10)
+        df_1h = self.broker.get_candles(main_sym, interval="60", days=20)
+        df_4h = self.broker.get_candles(main_sym, interval="240", days=45)
+        df_d = self.broker.get_candles(main_sym, interval="D", days=60)
+        df_fut = self.broker.get_candles("NIFTY_FUT", interval="5", days=3)
+        df_vix = self.broker.get_candles("INDIAVIX", interval="5", days=3)
+
+        close = df_5m["close"].iloc[-1]
+        atmNow = round(close / PARAMS["optStep"]) * PARAMS["optStep"]
+        if self.ovCtr is None and atmNow > 0:
+            self.ovCtr = atmNow
+
+        oc_data = self.broker.get_option_chain_metrics(
+            atmNow, self.ovCtr, PARAMS["ocN"], PARAMS["ovN"]
+        ) if (PARAMS["autoOc"] or PARAMS["ovOn"]) else {}
+
+        stock_changes = self.broker.get_breadth_changes()
+        self.evaluate_bar_data(df_5m, df_3m, df_15m, df_1h, df_4h, df_d, df_fut, df_vix, stock_changes, oc_data, is_pre_alert=is_pre_alert)
+        self.render_dashboard()
+
+
+# ==============================================================================
+# 6. HISTORICAL BACKTEST RUNNER (ALL SIGNALS + REAL BLUE ARROW TRADE ON SAME DATA)
+# ==============================================================================
+def run_backtest(broker: BrokerConnector, days: int = 30):
+    bt_type = CONFIG.get("BACKTEST_ENTRY_TYPE", "BOTH").upper()
+    print(f"\nFetching Historical Data ({days} days) for Backtest | Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']}...")
+    main_sym = CONFIG["CHART_SYMBOL"]
+
+    df_5m = broker.get_candles(main_sym, interval="5", days=days + 10)
+    df_3m = broker.get_candles(main_sym, interval="3", days=days + 10)
+    df_15m = broker.get_candles(main_sym, interval="15", days=days + 15)
+    df_1h = broker.get_candles(main_sym, interval="60", days=days + 25)
+    df_4h = broker.get_candles(main_sym, interval="240", days=days + 50)
+    df_d = broker.get_candles(main_sym, interval="D", days=days + 60)
+    df_fut = broker.get_candles("NIFTY_FUT", interval="5", days=days + 10)
+    df_vix = broker.get_candles("INDIAVIX", interval="5", days=days + 10)
+
+    if df_5m.empty or len(df_5m) < 100:
+        print("Backtest ke liye paryapt historical data nahi mila.")
+        return
+
+    stock_daily = {}
+    for sym, _ in BREADTH_STOCKS:
+        d_s = broker.get_candles(sym, interval="D", days=days + 15)
+        if not d_s.empty:
+            d_s["pct"] = d_s["close"].pct_change() * 100.0
+            stock_daily[sym] = d_s["pct"]
+
+    modes_to_run = ["ALL_SIGNALS", "REAL_BLUE_ONLY"] if bt_type == "BOTH" else [bt_type]
+
+    for mode_label in modes_to_run:
+        engine = NiftyOptionProEngine(broker, is_backtest=True, bt_entry_mode=mode_label)
+        oc_bt = {
+            "expiry": PARAMS["expiryMode"],
+            "ocOk": PARAMS["pcrIn"] > 0,
+            "ocPcr": PARAMS["pcrIn"] if PARAMS["pcrIn"] > 0 else np.nan,
+            "ocCallK": PARAMS["callWall"] if PARAMS["callWall"] > 0 else np.nan,
+            "ocPutK": PARAMS["putWall"] if PARAMS["putWall"] > 0 else np.nan,
+            "volOk": False,
+            "volPcr": np.nan,
+            "volSig": 0.0
+        }
+
+        for i in range(60, len(df_5m)):
+            sub_5m = df_5m.iloc[:i + 1]
+            cur_ts = sub_5m.index[-1]
+            cur_date = cur_ts.date()
+
+            sub_3m = df_3m[df_3m.index <= cur_ts]
+            sub_15m = df_15m[df_15m.index <= cur_ts]
+            sub_1h = df_1h[df_1h.index <= cur_ts]
+            sub_4h = df_4h[df_4h.index <= cur_ts]
+            sub_d = df_d[df_d.index.date <= cur_date]
+            sub_fut = df_fut[df_fut.index <= cur_ts] if not df_fut.empty else pd.DataFrame()
+            sub_vix = df_vix[df_vix.index <= cur_ts] if not df_vix.empty else pd.DataFrame()
+
+            if len(sub_d) < 30 or len(sub_3m) < 30 or len(sub_15m) < 30 or len(sub_1h) < 30 or len(sub_4h) < 30:
+                continue
+
+            changes = {}
+            for sym, _ in BREADTH_STOCKS:
+                s_pct = stock_daily.get(sym)
+                if s_pct is not None:
+                    valid = s_pct[s_pct.index.date <= cur_date]
+                    changes[sym] = valid.iloc[-1] if not valid.empty else np.nan
+                else:
+                    changes[sym] = np.nan
+
+            engine.evaluate_bar_data(sub_5m, sub_3m, sub_15m, sub_1h, sub_4h, sub_d, sub_fut, sub_vix, changes, oc_bt)
+
+        total_trades = engine.winN + engine.lossN
+        win_rate = (engine.winN / total_trades * 100.0) if total_trades > 0 else 0.0
+        pf = (engine.gp / engine.gl) if engine.gl > 0 else (float("inf") if engine.gp > 0 else 0.0)
+
+        title_tag = "REAL TRADE BACKTEST (BLUE ARROW FINAL BUY ONLY)" if mode_label == "REAL_BLUE_ONLY" else "INITIAL SIGNALS BACKTEST (GREEN/RED ARROW)"
+        print("\n" + "=" * 92)
+        print(f"{title_tag}")
+        print(f"Strike: {PARAMS['strikeMode']} | Expiry: {PARAMS['expiryMode']} | Exit: {PARAMS['exitMode']} | Total Trades: {total_trades}")
+        print(f"Wins: {engine.winN} | Losses: {engine.lossN} | Win%: {win_rate:.1f}% | Profit Factor: {pf:.2f}")
+        print(f"Total Net Points: {engine.totPnl:+.2f} pts | Max Drawdown: -{engine.maxDD:.2f} pts")
+        print("=" * 92)
+
+        if engine.trade_journal:
+            j_df = pd.DataFrame(engine.trade_journal)
+            print(j_df.to_string(index=False))
+            csv_name = f"backtest_{mode_label}_{PARAMS['strikeMode']}_{PARAMS['exitMode']}.csv"
+            j_df.to_csv(csv_name, index=False)
+            print(f"\nTrade Journal saved to: {csv_name}")
+
+        if CONFIG.get("DASH_ON", True):
+            dash_path = f"dashboard_backtest_{mode_label}.html"
+            engine.render_dashboard(dash_path)
+            print(f"Dashboard (chart + tables) saved to: {dash_path}")
+
+
+
+# ==============================================================================
+# 7. STREAMLIT CONTROL PANEL & EXECUTION ENTRYPOINT (Zero Hardcoded Tokens)
+# ==============================================================================
+st.title("馃殌 NIFTY OPTION SIGNAL PRO v28 - LIVE CONTROL & 12-TABLE DASHBOARD")
+
+if not ui_access_token or (ui_broker == "DHAN" and not ui_client_id):
+    st.warning("馃憟 Kripya left sidebar mein apna asli **Dhan Client ID** aur **Broker Access Token** enter karein.")
+    st.info("Token dalne ke baad neeche diye gaye buttons se LIVE Engine, Backtest, ya Real Trade Report chalu karein.")
+    st.stop()
+
+col1, col2, col3, col4 = st.columns(4)
+run_once_btn = col1.button("鈻讹笍 Run Single 5m Scan & Update Dashboard", use_container_width=True)
+live_loop_btn = col2.button("馃敶 Start Auto-Live Loop (5m Candles)", use_container_width=True)
+run_bt_btn = col3.button("馃搳 Run Historical Backtest", use_container_width=True)
+show_rep_btn = col4.button("馃搾 Show Real Trades Report", use_container_width=True)
+
+if "connector" not in st.session_state or st.session_state.get("last_tok") != ui_access_token:
+    try:
+        with st.spinner("Broker Master & Instrument List load ho rahi hai..."):
+            st.session_state.connector = BrokerConnector(CONFIG)
+            st.session_state.engine = NiftyOptionProEngine(st.session_state.connector, is_backtest=False)
+            st.session_state.last_tok = ui_access_token
+        st.success(f"鉁� {ui_broker} Connected Successfully! Upcoming Expiries: {st.session_state.connector.get_all_upcoming_expiries()[:4]}")
+    except Exception as e:
+        st.error(f"鉂� Broker Connection Error: {e}")
+        st.stop()
+
+connector = st.session_state.connector
+engine = st.session_state.engine
+
+if show_rep_btn:
+    st.subheader("馃搾 Real Live Trades Journal (live_real_trades_journal.csv)")
+    csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
+    if os.path.exists(csv_file):
+        df_rep = pd.read_csv(csv_file)
+        st.dataframe(df_rep, use_container_width=True)
+    else:
+        st.info("Abhi tak koi real trade record nahi hua hai.")
+    try:
+        st.code(connector.get_broker_live_trade_summary())
+    except Exception as ex:
+        st.write(f"Broker book info: {ex}")
+
+if run_bt_btn:
+    with st.spinner(f"Running {CONFIG['BACKTEST_DAYS']} Days Backtest ({CONFIG['BACKTEST_ENTRY_TYPE']})..."):
+        run_backtest(connector, days=CONFIG["BACKTEST_DAYS"])
+    st.success("鉁� Backtest Complete! Dashboard HTML updated.")
+    bt_html_file = f"dashboard_backtest_{'REAL_BLUE_ONLY' if CONFIG['BACKTEST_ENTRY_TYPE']=='REAL_BLUE_ONLY' else 'ALL_SIGNALS'}.html"
+    if os.path.exists(bt_html_file):
+        with open(bt_html_file, "r", encoding="utf-8") as f:
+            components.html(f.read(), height=820, scrolling=True)
+
+if run_once_btn:
+    with st.spinner("Fetching 3m/5m/15m/1h/4h/Daily, Option Chain, VOL PCR & 20 Stocks Breadth..."):
+        engine.process_live_bar(is_pre_alert=False)
+    st.success(f"鉁� Scan Complete at {dt.datetime.now(IST).strftime('%H:%M:%S IST')}!")
+
+if live_loop_btn:
+    st.warning("馃敶 Auto-Live Loop Chalu Hai! Stop karne ke liye upar right corner mein 'Stop' dabayein.")
+    placeholder = st.empty()
+    while True:
+        now = dt.datetime.now(IST)
+        if PARAMS["preSec"] > 0 and (now.minute % 5 == 4) and (now.second == 60 - PARAMS["preSec"]):
+            try:
+                engine.process_live_bar(is_pre_alert=True)
+            except Exception:
+                pass
+            time.sleep(1)
+
+        if (now.minute % 5 == 0) and (now.second == 2):
+            try:
+                engine.process_live_bar(is_pre_alert=False)
+                if os.path.exists(CONFIG["DASH_HTML_PATH"]):
+                    with open(CONFIG["DASH_HTML_PATH"], "r", encoding="utf-8") as f:
+                        with placeholder.container():
+                            components.html(f.read(), height=820, scrolling=True)
+            except Exception as exc:
+                st.error(f"[Error] {exc}")
+            time.sleep(2)
+        time.sleep(0.5)
+
+# Always display the latest generated 12-Table HTML Dashboard if available
+if os.path.exists(CONFIG["DASH_HTML_PATH"]) and not run_bt_btn:
+    with open(CONFIG["DASH_HTML_PATH"], "r", encoding="utf-8") as f:
+        components.html(f.read(), height=820, scrolling=True)
