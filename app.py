@@ -29,14 +29,14 @@ import streamlit.components.v1 as components
 # ==============================================================================
 st.set_page_config(page_title="Nifty Option Signal PRO v28", layout="wide")
 
-st.sidebar.title("馃攼 Broker & API Settings")
+st.sidebar.title("Broker & API Settings")
 ui_broker = st.sidebar.selectbox("Select Broker", ["DHAN", "UPSTOX"], index=0)
 ui_chart_sym = st.sidebar.selectbox("Chart Symbol", ["NIFTY_SPOT", "NIFTY_FUT"], index=0)
 ui_client_id = st.sidebar.text_input("Dhan Client ID", value=os.environ.get("DHAN_CLIENT_ID", ""))
 ui_access_token = st.sidebar.text_input("Broker Access Token", type="password", value=os.environ.get("DHAN_ACCESS_TOKEN", ""))
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("鈿欙笍 Strategy & Execution Controls")
+st.sidebar.subheader("Strategy & Execution Controls")
 ui_run_mode = st.sidebar.selectbox("Run Mode", ["LIVE", "BACKTEST"], index=0)
 ui_bt_days = st.sidebar.number_input("Backtest Days", min_value=1, max_value=180, value=30)
 ui_bt_type = st.sidebar.selectbox("Backtest Entry Type", ["BOTH", "REAL_BLUE_ONLY", "ALL_SIGNALS"], index=0)
@@ -2443,18 +2443,18 @@ def run_backtest(broker: BrokerConnector, days: int = 30):
 # ==============================================================================
 # 7. STREAMLIT CONTROL PANEL & EXECUTION ENTRYPOINT (Zero Hardcoded Tokens)
 # ==============================================================================
-st.title("馃殌 NIFTY OPTION SIGNAL PRO v28 - LIVE CONTROL & 12-TABLE DASHBOARD")
+st.title("NIFTY OPTION SIGNAL PRO v28 - LIVE CONTROL & 12-TABLE DASHBOARD")
 
 if not ui_access_token or (ui_broker == "DHAN" and not ui_client_id):
-    st.warning("馃憟 Kripya left sidebar mein apna asli **Dhan Client ID** aur **Broker Access Token** enter karein.")
+    st.warning("Kripya left sidebar mein apna asli **Dhan Client ID** aur **Broker Access Token** enter karein.")
     st.info("Token dalne ke baad neeche diye gaye buttons se LIVE Engine, Backtest, ya Real Trade Report chalu karein.")
     st.stop()
 
 col1, col2, col3, col4 = st.columns(4)
-run_once_btn = col1.button("鈻讹笍 Run Single 5m Scan & Update Dashboard", use_container_width=True)
-live_loop_btn = col2.button("馃敶 Start Auto-Live Loop (5m Candles)", use_container_width=True)
-run_bt_btn = col3.button("馃搳 Run Historical Backtest", use_container_width=True)
-show_rep_btn = col4.button("馃搾 Show Real Trades Report", use_container_width=True)
+run_once_btn = col1.button("Run Single 5m Scan & Update Dashboard", use_container_width=True)
+live_loop_btn = col2.button("Start Auto-Live Loop (5m Candles)", use_container_width=True)
+run_bt_btn = col3.button("Run Historical Backtest", use_container_width=True)
+show_rep_btn = col4.button("Show Real Trades Report", use_container_width=True)
 
 if "connector" not in st.session_state or st.session_state.get("last_tok") != ui_access_token:
     try:
@@ -2462,16 +2462,16 @@ if "connector" not in st.session_state or st.session_state.get("last_tok") != ui
             st.session_state.connector = BrokerConnector(CONFIG)
             st.session_state.engine = NiftyOptionProEngine(st.session_state.connector, is_backtest=False)
             st.session_state.last_tok = ui_access_token
-        st.success(f"鉁� {ui_broker} Connected Successfully! Upcoming Expiries: {st.session_state.connector.get_all_upcoming_expiries()[:4]}")
+        st.success(f"[OK] {ui_broker} Connected Successfully! Upcoming Expiries: {st.session_state.connector.get_all_upcoming_expiries()[:4]}")
     except Exception as e:
-        st.error(f"鉂� Broker Connection Error: {e}")
+        st.error(f"[ERROR] Broker Connection Error: {e}")
         st.stop()
 
 connector = st.session_state.connector
 engine = st.session_state.engine
 
 if show_rep_btn:
-    st.subheader("馃搾 Real Live Trades Journal (live_real_trades_journal.csv)")
+    st.subheader("Real Live Trades Journal (live_real_trades_journal.csv)")
     csv_file = CONFIG.get("REAL_TRADES_CSV", "live_real_trades_journal.csv")
     if os.path.exists(csv_file):
         df_rep = pd.read_csv(csv_file)
@@ -2486,7 +2486,7 @@ if show_rep_btn:
 if run_bt_btn:
     with st.spinner(f"Running {CONFIG['BACKTEST_DAYS']} Days Backtest ({CONFIG['BACKTEST_ENTRY_TYPE']})..."):
         run_backtest(connector, days=CONFIG["BACKTEST_DAYS"])
-    st.success("鉁� Backtest Complete! Dashboard HTML updated.")
+    st.success("[OK] Backtest Complete! Dashboard HTML updated.")
     bt_html_file = f"dashboard_backtest_{'REAL_BLUE_ONLY' if CONFIG['BACKTEST_ENTRY_TYPE']=='REAL_BLUE_ONLY' else 'ALL_SIGNALS'}.html"
     if os.path.exists(bt_html_file):
         with open(bt_html_file, "r", encoding="utf-8") as f:
@@ -2495,10 +2495,10 @@ if run_bt_btn:
 if run_once_btn:
     with st.spinner("Fetching 3m/5m/15m/1h/4h/Daily, Option Chain, VOL PCR & 20 Stocks Breadth..."):
         engine.process_live_bar(is_pre_alert=False)
-    st.success(f"鉁� Scan Complete at {dt.datetime.now(IST).strftime('%H:%M:%S IST')}!")
+    st.success(f"[OK] Scan Complete at {dt.datetime.now(IST).strftime('%H:%M:%S IST')}!")
 
 if live_loop_btn:
-    st.warning("馃敶 Auto-Live Loop Chalu Hai! Stop karne ke liye upar right corner mein 'Stop' dabayein.")
+    st.warning("[LIVE] Auto-Live Loop Chalu Hai! Stop karne ke liye upar right corner mein 'Stop' dabayein.")
     placeholder = st.empty()
     while True:
         now = dt.datetime.now(IST)
