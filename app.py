@@ -94,7 +94,7 @@ def get_option_strike(spot_price, signal_type, strike_mode="ATM", step=50):
     return ""
 
 # ==========================================
-# LIVE NIFTY 5-MIN DATA FETCHER (DHAN API)
+# LIVE NIFTY 5-MIN DATA FETCHER (DHAN API v2 WITH fromDate & toDate)
 # ==========================================
 def fetch_live_nifty_5min(client_id, access_token):
     url = "https://api.dhan.co/v2/charts/intraday"
@@ -103,12 +103,18 @@ def fetch_live_nifty_5min(client_id, access_token):
         "client-id": client_id,
         "Content-Type": "application/json"
     }
+    now_ist = get_ist_now()
+    from_dt = (now_ist - timedelta(days=5)).strftime("%Y-%m-%d 09:15:00")
+    to_dt = now_ist.strftime("%Y-%m-%d %H:%M:%S")
+
     payload = {
         "securityId": "13",
         "exchangeSegment": "IDX_I",
         "instrument": "INDEX",
         "interval": "5",
-        "oi": False
+        "oi": False,
+        "fromDate": from_dt,
+        "toDate": to_dt
     }
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=8)
@@ -277,7 +283,7 @@ def process_live_market_tick(
     if status_notes:
         return " | ".join(status_notes)
 
-    return f"Monitoring Live @ {now_ist.strftime('%I:%M:%S %p')} IST | Open Trades: {len(st.session_state.active_positions)}"
+    return f"Monitoring Live @ {now_ist.strftime('%I:%M:%S %p')} IST | Spot: {current_spot:.2f} | Open Trades: {len(st.session_state.active_positions)}"
 
 # ==========================================
 # HISTORICAL BACKTEST ENGINE
