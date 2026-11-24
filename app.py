@@ -25,7 +25,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 0. STREAMLIT UI & DIRECT CREDENTIAL INPUTS (Sidebar)
+# 0. STREAMLIT UI - ALL SETTINGS ON SIDEBAR (100% PINE SCRIPT v28 SETTINGS)
 # ==============================================================================
 st.set_page_config(page_title="Nifty Option Signal PRO v28", layout="wide")
 
@@ -35,203 +35,293 @@ ui_chart_sym = st.sidebar.selectbox("Chart Symbol", ["NIFTY_SPOT", "NIFTY_FUT"],
 ui_client_id = st.sidebar.text_input("Dhan Client ID", value=os.environ.get("DHAN_CLIENT_ID", ""))
 ui_access_token = st.sidebar.text_input("Broker Access Token", type="password", value=os.environ.get("DHAN_ACCESS_TOKEN", ""))
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Strategy & Execution Controls")
-ui_run_mode = st.sidebar.selectbox("Run Mode", ["LIVE", "BACKTEST"], index=0)
-ui_bt_days = st.sidebar.number_input("Backtest Days", min_value=1, max_value=180, value=30)
-ui_bt_type = st.sidebar.selectbox("Backtest Entry Type", ["BOTH", "REAL_BLUE_ONLY", "ALL_SIGNALS"], index=0)
-ui_strike_mode = st.sidebar.selectbox("Strike Mode", ["ATM", "ITM_1", "ITM_2", "OTM_1"], index=0)
-ui_expiry_mode = st.sidebar.selectbox("Expiry Mode", ["CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"], index=0)
-ui_manual_expiry = st.sidebar.text_input("Manual Expiry (YYYY-MM-DD)", value="")
-ui_exit_mode = st.sidebar.selectbox("Exit Mode", ["T1", "T2", "T1_T2", "MANUAL"], index=0)
-ui_oc_n = st.sidebar.slider("Option OI Strike Span (+- N)", min_value=2, max_value=9, value=4)
-ui_ov_n = st.sidebar.slider("VOL PCR Strike Span (+- N)", min_value=2, max_value=9, value=5)
-ui_auto_order = st.sidebar.checkbox("Auto Place Live Order (Real Trades)", value=False)
+with st.sidebar.expander("Telegram Alerts (Optional)", expanded=False):
+    ui_tg_token = st.text_input("Telegram Bot Token", value=os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+    ui_tg_chat = st.text_input("Telegram Chat ID", value=os.environ.get("TELEGRAM_CHAT_ID", ""))
+
+with st.sidebar.expander("1. Run Mode, Strike, Expiry & Exit", expanded=True):
+    ui_run_mode = st.selectbox("Run Mode", ["LIVE", "BACKTEST"], index=0)
+    ui_bt_days = st.number_input("Backtest Days", min_value=1, max_value=180, value=30)
+    ui_bt_type = st.selectbox("Backtest Entry Type", ["BOTH", "REAL_BLUE_ONLY", "ALL_SIGNALS"], index=0)
+    ui_auto_order = st.checkbox("Auto Place Live Order (Real Trades)", value=False)
+    ui_prod_type = st.selectbox("Product Type", ["INTRADAY", "MARGIN"], index=0)
+    ui_strike_mode = st.selectbox("Strike Mode", ["ATM", "ITM_1", "ITM_2", "OTM_1"], index=0)
+    ui_expiry_mode = st.selectbox("Expiry Mode", ["CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"], index=0)
+    ui_manual_expiry = st.text_input("Manual Expiry (YYYY-MM-DD)", value="")
+    ui_exit_mode = st.selectbox("Exit Mode", ["T1", "T2", "T1_T2", "MANUAL"], index=0)
+    ui_t1_exit_pct = st.slider("T1 Partial Exit % (for T1_T2)", min_value=10, max_value=90, value=50, step=5)
+    ui_use_hl_target = st.checkbox("Use High/Low for Target Touch", value=True)
+
+with st.sidebar.expander("2. G0: Capital, Risk, Session & Trade Setup", expanded=False):
+    ui_chart_type = st.selectbox("Chart Type", ["Index/Fut", "Option"], index=0)
+    ui_opt_step = st.number_input("Option Strike Step", value=50.0, step=50.0)
+    ui_opt_lot = st.number_input("Option Lot Size", min_value=1, value=65)
+    ui_opt_delta = st.number_input("Option Delta", min_value=0.1, max_value=1.0, value=0.5, step=0.05)
+    ui_sl_mult = st.number_input("SL ATR Multiplier", min_value=0.2, max_value=5.0, value=1.5, step=0.1)
+    ui_rr_t = st.number_input("Risk:Reward (T1)", min_value=0.5, max_value=10.0, value=2.0, step=0.5)
+    ui_capital = st.number_input("Capital (Rs)", min_value=10000.0, value=100000.0, step=10000.0)
+    ui_risk_pct = st.number_input("Risk % per Trade", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+    ui_need_n = st.slider("5m Tech Conditions Need", min_value=1, max_value=5, value=4)
+    ui_or_bars = st.slider("Opening Range Bars (5m)", min_value=1, max_value=12, value=3)
+    ui_sess_start = st.text_input("Session Start (HH:MM)", value="09:20")
+    ui_sess_end = st.text_input("Session End (HH:MM)", value="15:00")
+    ui_ext_mult = st.number_input("EMA21 Max Extension (ATR)", min_value=0.5, max_value=10.0, value=3.0, step=0.5)
+    ui_cool_bars = st.number_input("Cooldown Bars After Exit", min_value=0, max_value=50, value=6)
+
+with st.sidebar.expander("3. MTF, ADX, DI & Direction Filters", expanded=False):
+    ui_mtf_on = st.checkbox("MTF Filter ON (3m/15m)", value=True)
+    ui_mtf15_req = st.checkbox("Require 15m Agreement", value=False)
+    ui_mtf_need = st.slider("MTF Tech Conditions Need", min_value=1, max_value=4, value=3)
+    ui_adx_on = st.checkbox("ADX Sideways Filter ON", value=True)
+    ui_adx_len = st.number_input("ADX Length", min_value=5, max_value=50, value=14)
+    ui_adx_min = st.number_input("Min ADX (5m)", min_value=0.0, max_value=50.0, value=20.0, step=1.0)
+    ui_di_on = st.checkbox("DI Directional Filter ON", value=True)
+    ui_di_mtf = st.checkbox("Multi-TF DI Check (3m/5m/15m)", value=True)
+    ui_di_need = st.slider("DI TF Agreement Need (of 3)", min_value=1, max_value=3, value=2)
+    ui_adx_trd = st.number_input("DI Trend ADX Min", value=20.0, step=1.0)
+    ui_di_strong = st.number_input("DI Strong Min", value=20.0, step=1.0)
+    ui_di_weak = st.number_input("DI Weak Max", value=20.0, step=1.0)
+    ui_allow_ce = st.checkbox("Allow CE Trades", value=True)
+    ui_allow_pe = st.checkbox("Allow PE Trades", value=True)
+    ui_pe_br_max = st.number_input("PE Max Breadth Score", value=100.0, step=5.0)
+    ui_pe_adx_min = st.number_input("PE Min ADX", value=0.0, step=1.0)
+    ui_pe_htf = st.selectbox("PE HTF Requirement", ["1h PE", "1h+4h PE", "OFF"], index=0)
+    ui_pe_below_open = st.checkbox("PE Require Below Day Open", value=True)
+    ui_opt_sym = st.text_input("Manual Option Symbol (Optional)", value="")
+    ui_opt_entry = st.number_input("Manual Option Entry Price (0=Auto)", value=0.0, step=1.0)
+
+with st.sidebar.expander("4. G5: Final Buy (Blue Arrow) Settings", expanded=False):
+    ui_wf_on = st.checkbox("Final Buy (Blue Arrow) Watch ON", value=True)
+    ui_wf_min = st.number_input("Min Wait Bars", min_value=0, max_value=10, value=1)
+    ui_wf_rule = st.selectbox("Final Buy Rule", ["E", "A", "B", "C", "D"], index=0)
+    ui_wf_a = st.number_input("Rule A Bounce (ATR)", value=0.5, step=0.1)
+    ui_wf_dip = st.number_input("Rule C Min Dip (ATR)", value=0.5, step=0.1)
+    ui_wf_wk = st.number_input("Rule C Wick %", value=40, step=5)
+    ui_wf_f = st.number_input("Rule D Fast SMA", value=3)
+    ui_wf_s = st.number_input("Rule D Slow SMA", value=5)
+    ui_wf_max = st.number_input("Max Watch Bars", min_value=2, max_value=50, value=20)
+    ui_wf_up = st.number_input("Rule E Breakout (ATR)", value=0.5, step=0.1)
+    ui_wf_up_pts = st.number_input("Rule E Breakout Fixed Pts (0=ATR)", value=0.0, step=5.0)
+    ui_wf_wick = st.checkbox("Check Wick for SL Cancel", value=True)
+
+with st.sidebar.expander("5. G7: Daily 20MA Direction Gate", expanded=False):
+    ui_dg_on = st.checkbox("Daily 20MA Gate ON", value=True)
+    ui_dg_mode = st.selectbox("Daily Gate Mode", ["Sirf PE par", "Sirf CE par", "Dono par"], index=0)
+    ui_pe_sc_min = st.slider("PE Score Min (of 5)", min_value=0, max_value=5, value=3)
+    ui_dg_len = st.number_input("Daily MA Length", value=20)
+    ui_dg_d1 = st.number_input("Slope Lookback D1 (days)", value=7)
+    ui_dg_d2 = st.number_input("Slope Lookback D2 (days)", value=5)
+    ui_dg_flat = st.number_input("Flat Threshold %", value=0.05, step=0.01)
+
+with st.sidebar.expander("6. G8: v22 Pro Filters & Trailing", expanded=False):
+    ui_late_on = st.checkbox("Block Late Exhaustion Entry", value=False)
+    ui_late_adx = st.number_input("Late ADX Threshold", value=40.0)
+    ui_late_br = st.number_input("Late Breadth Threshold", value=90.0)
+    ui_ar_on = st.checkbox("Require Rising ADX", value=False)
+    ui_ar_n = st.number_input("ADX Rising Bars", value=3)
+    ui_rsi_on = st.checkbox("RSI Overbought/Oversold Block", value=False)
+    ui_rsi_hi = st.number_input("RSI High Limit", value=76.0)
+    ui_rsi_lo = st.number_input("RSI Low Limit", value=24.0)
+    ui_cd_on = st.checkbox("Candle Close Position Filter", value=False)
+    ui_cd_pos = st.number_input("Min Candle Close Pos (0-1)", value=0.6, step=0.05)
+    ui_vf_on = st.checkbox("Volume Filter ON", value=False)
+    ui_vf_mult = st.number_input("Volume Avg Multiplier", value=1.0, step=0.1)
+    ui_lvl_on = st.checkbox("PDH/PDL Proximity Block", value=False)
+    ui_lvl_buf = st.number_input("PDH/PDL Buffer %", value=0.15, step=0.05)
+    ui_rd_on = st.checkbox("Round Number Block", value=False)
+    ui_rd_step = st.number_input("Round Number Step", value=100.0, step=50.0)
+    ui_rd_pts = st.number_input("Round Number Buffer Pts", value=15.0, step=5.0)
+    ui_op_on = st.checkbox("CE Above Day Open Filter", value=False)
+    ui_vx_on = st.checkbox("India VIX Direction Filter", value=False)
+    ui_vx_look = st.number_input("VIX Lookback Bars", value=12)
+    ui_tm_on = st.checkbox("Time Slot Block ON", value=False)
+    ui_ex_on = st.checkbox("Expiry Day Block ON", value=False)
+    ui_ex_day = st.selectbox("Expiry Day", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], index=1)
+    ui_be_on = st.checkbox("Breakeven SL Move ON", value=False)
+    ui_be_r = st.number_input("Breakeven Trigger (R)", value=1.0, step=0.1)
+    ui_be_lock = st.number_input("Breakeven Lock (R)", value=0.1, step=0.05)
+    ui_tr_on = st.checkbox("Trail T1 to T2 ON", value=False)
+    ui_gd_a = st.slider("Grade A Min Score (of 9)", min_value=1, max_value=9, value=8)
+    ui_gd_b = st.slider("Grade B Min Score (of 9)", min_value=1, max_value=9, value=6)
+
+with st.sidebar.expander("7. G3/G4/G9: Option OI, VOL PCR & Futures OI", expanded=False):
+    ui_auto_oc = st.checkbox("Auto Option Chain Fetch ON", value=True)
+    ui_oc_n = st.slider("Option OI Strike Span (+- N)", min_value=2, max_value=9, value=4)
+    ui_pcr_in = st.number_input("Manual PCR Override (0=Auto)", value=0.0, step=0.05)
+    ui_call_wall = st.number_input("Manual Call Wall (0=Auto)", value=0.0, step=50.0)
+    ui_put_wall = st.number_input("Manual Put Wall (0=Auto)", value=0.0, step=50.0)
+    ui_wall_buf = st.number_input("Wall Proximity Buffer %", value=0.3, step=0.05)
+    ui_pcr_bull = st.number_input("OI PCR Bullish Threshold", value=1.1, step=0.05)
+    ui_pcr_bear = st.number_input("OI PCR Bearish Threshold", value=0.9, step=0.05)
+    ui_ov_on = st.checkbox("Option VOL PCR ON", value=True)
+    ui_ov_n = st.slider("VOL PCR Strike Span (+- N)", min_value=2, max_value=9, value=5)
+    ui_ov_bull = st.number_input("VOL PCR Bullish Threshold", value=1.2, step=0.05)
+    ui_ov_bear = st.number_input("VOL PCR Bearish Threshold", value=0.8, step=0.05)
+    ui_ov_feed = st.checkbox("Feed VOL PCR into OI Score", value=True)
+    ui_fut_oi_on = st.checkbox("Futures OI Filter ON", value=True)
+    ui_oi_look = st.number_input("Futures OI Lookback Bars", value=12)
+    ui_oi_prob_on = st.checkbox("OI+Vol Probability Filter ON", value=True)
+    ui_min_prob_ce = st.number_input("Min OI+Vol Prob CE %", value=55.0, step=5.0)
+    ui_min_prob_pe = st.number_input("Min OI+Vol Prob PE %", value=55.0, step=5.0)
+    ui_req_hi_prob = st.checkbox("Require HIGH PROB Signal Only", value=False)
+
+with st.sidebar.expander("8. G1/G2/GSC: Pre-Alert, Breadth & Sector", expanded=False):
+    ui_pre_sec = st.number_input("Pre-Alert Seconds Before Close", min_value=0, max_value=55, value=15)
+    ui_flat_pct = st.number_input("Stock Flat Threshold %", value=0.02, step=0.01)
+    ui_impl_ref = st.number_input("Implied Nifty Ref %", value=0.5, step=0.1)
+    ui_hi_th = st.number_input("Breadth High Prob Threshold", value=65.0, step=5.0)
+    ui_sc_on = st.checkbox("Sector Table ON", value=True)
+    ui_sc_th = st.number_input("Sector Trend Threshold %", value=0.25, step=0.05)
+    ui_sc_feed = st.checkbox("Sector Filter Block Signals", value=False)
+    ui_sc_need = st.slider("Heavyweight Sectors Needed (of 3)", min_value=1, max_value=3, value=2)
+    ui_sc_bank_ok = st.checkbox("Require Banks Not Against", value=True)
 
 # ==============================================================================
-# 1. BROKER, CHART, EXECUTION & TELEGRAM CONFIG (GitHub Secrets + Direct Support)
+# 1. BROKER, CHART, EXECUTION & TELEGRAM CONFIG
 # ==============================================================================
 CONFIG = {
     "BROKER": ui_broker,
     "CHART_SYMBOL": ui_chart_sym,
-
-    # Dhan API Credentials
     "DHAN_CLIENT_ID": ui_client_id,
     "DHAN_ACCESS_TOKEN": ui_access_token,
-
-    # Upstox API Credentials
     "UPSTOX_ACCESS_TOKEN": ui_access_token if ui_broker == "UPSTOX" else os.environ.get("UPSTOX_ACCESS_TOKEN", ""),
-
-    # Telegram Alerts (Optional)
-    "TELEGRAM_BOT_TOKEN": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
-    "TELEGRAM_CHAT_ID": os.environ.get("TELEGRAM_CHAT_ID", ""),
-
-    # Run Mode & Order Execution
+    "TELEGRAM_BOT_TOKEN": ui_tg_token,
+    "TELEGRAM_CHAT_ID": ui_tg_chat,
     "RUN_MODE": ui_run_mode,
     "BACKTEST_DAYS": int(ui_bt_days),
     "BACKTEST_ENTRY_TYPE": ui_bt_type,
     "AUTO_PLACE_ORDER": ui_auto_order,
-    "PRODUCT_TYPE": "INTRADAY",
+    "PRODUCT_TYPE": ui_prod_type,
     "INTERACTIVE_MENU": False,
     "REAL_TRADES_CSV": "live_real_trades_journal.csv",
-
-    # Dashboard (nifty_dash)
     "DASH_ON": True,
     "DASH_HTML_PATH": "dashboard.html",
     "DASH_CONSOLE_TABLES": False,
 }
 
 # ==============================================================================
-# 2. COMPLETE INDICATOR SETTINGS (100% EXACT PINE SCRIPT v28 + VOL PCR)
+# 2. COMPLETE INDICATOR SETTINGS (ALL CONNECTED TO SIDEBAR CONTROLS)
 # ==============================================================================
 PARAMS = {
-    # --- STRIKE & EXPIRY SELECTION OPTIONS ---
     "strikeMode": ui_strike_mode,
     "expiryMode": ui_expiry_mode,
     "manualExpiry": ui_manual_expiry,
-
-    # --- TARGET EXIT OPTIONS (Live Algo + Backtest Dono Ke Liye) ---
     "exitMode": ui_exit_mode,
-    "t1ExitPct": 50,
-    "useHighLowForTarget": True,
-
-    # --- G0: Chart, Market Window & Trade Settings ---
-    "chartType": "Index/Fut",
-    "optStep": 50.0,
-    "optLot": 65,
-    "optDelta": 0.5,
-    "slMult": 1.5,
-    "rrT": 2.0,
-    "capital": 100000.0,
-    "riskPct": 1.0,
-    "needN": 4,
-    "orBars": 3,
-    "sess_start": "09:20",
-    "sess_end": "15:00",
-    "extMult": 3.0,
-    "coolBars": 6,
-
-    # MTF Toggles (3m, 5m, 15m, 1h, 4h)
-    "mtfOn": True,
-    "mtf15Req": False,
-    "mtfNeed": 3,
-
-    # Sideways & DI Filter Toggles
-    "adxOn": True,
-    "adxLen": 14,
-    "adxMin": 20.0,
-    "diOn": True,
-    "diMtf": True,
-    "diNeed": 2,
-    "adxTrd": 20.0,
-    "diStrong": 20.0,
-    "diWeak": 20.0,
-
-    # Direction & PE Specific Filters
-    "allowCE": True,
-    "allowPE": True,
-    "peBrMax": 100.0,
-    "peAdxMin": 0.0,
-    "peHtf": "1h PE",
-    "peBelowOpen": True,
-    "optSym": "",
-    "optEntry": 0.0,
-
-    # --- G5: Final Buy (Green/Red Arrow -> Calculation -> Blue Arrow) ---
-    "wfOn": True,
-    "wfMin": 1,
-    "wfRule": "E",
-    "wfA": 0.5,
-    "wfDip": 0.5,
-    "wfWk": 40,
-    "wfF": 3,
-    "wfS": 5,
-    "wfMax": 20,
-    "wfUp": 0.5,
-    "wfUpPts": 0.0,
-    "wfWick": True,
-
-    # --- G7: Daily 20MA Direction Gate (7 din / 5 din) ---
-    "dgOn": True,
-    "dgMode": "Sirf PE par",
-    "peScMin": 3,
-    "dgLen": 20,
-    "dgD1": 7,
-    "dgD2": 5,
-    "dgFlat": 0.05,
-
-    # --- G8: v22 Upgrades ---
-    "lateOn": False,
-    "lateAdx": 40.0,
-    "lateBr": 90.0,
-    "arOn": False,
-    "arN": 3,
-    "rsiOn": False,
-    "rsiHi": 76.0,
-    "rsiLo": 24.0,
-    "cdOn": False,
-    "cdPos": 0.6,
-    "vfOn": False,
-    "vfMult": 1.0,
-    "lvlOn": False,
-    "lvlBuf": 0.15,
-    "rdOn": False,
-    "rdStep": 100.0,
-    "rdPts": 15.0,
-    "opOn": False,
-    "vxOn": False,
-    "vxLook": 12,
-    "tmOn": False,
+    "t1ExitPct": int(ui_t1_exit_pct),
+    "useHighLowForTarget": ui_use_hl_target,
+    "chartType": ui_chart_type,
+    "optStep": float(ui_opt_step),
+    "optLot": int(ui_opt_lot),
+    "optDelta": float(ui_opt_delta),
+    "slMult": float(ui_sl_mult),
+    "rrT": float(ui_rr_t),
+    "capital": float(ui_capital),
+    "riskPct": float(ui_risk_pct),
+    "needN": int(ui_need_n),
+    "orBars": int(ui_or_bars),
+    "sess_start": ui_sess_start,
+    "sess_end": ui_sess_end,
+    "extMult": float(ui_ext_mult),
+    "coolBars": int(ui_cool_bars),
+    "mtfOn": ui_mtf_on,
+    "mtf15Req": ui_mtf15_req,
+    "mtfNeed": int(ui_mtf_need),
+    "adxOn": ui_adx_on,
+    "adxLen": int(ui_adx_len),
+    "adxMin": float(ui_adx_min),
+    "diOn": ui_di_on,
+    "diMtf": ui_di_mtf,
+    "diNeed": int(ui_di_need),
+    "adxTrd": float(ui_adx_trd),
+    "diStrong": float(ui_di_strong),
+    "diWeak": float(ui_di_weak),
+    "allowCE": ui_allow_ce,
+    "allowPE": ui_allow_pe,
+    "peBrMax": float(ui_pe_br_max),
+    "peAdxMin": float(ui_pe_adx_min),
+    "peHtf": ui_pe_htf,
+    "peBelowOpen": ui_pe_below_open,
+    "optSym": ui_opt_sym,
+    "optEntry": float(ui_opt_entry),
+    "wfOn": ui_wf_on,
+    "wfMin": int(ui_wf_min),
+    "wfRule": ui_wf_rule,
+    "wfA": float(ui_wf_a),
+    "wfDip": float(ui_wf_dip),
+    "wfWk": int(ui_wf_wk),
+    "wfF": int(ui_wf_f),
+    "wfS": int(ui_wf_s),
+    "wfMax": int(ui_wf_max),
+    "wfUp": float(ui_wf_up),
+    "wfUpPts": float(ui_wf_up_pts),
+    "wfWick": ui_wf_wick,
+    "dgOn": ui_dg_on,
+    "dgMode": ui_dg_mode,
+    "peScMin": int(ui_pe_sc_min),
+    "dgLen": int(ui_dg_len),
+    "dgD1": int(ui_dg_d1),
+    "dgD2": int(ui_dg_d2),
+    "dgFlat": float(ui_dg_flat),
+    "lateOn": ui_late_on,
+    "lateAdx": float(ui_late_adx),
+    "lateBr": float(ui_late_br),
+    "arOn": ui_ar_on,
+    "arN": int(ui_ar_n),
+    "rsiOn": ui_rsi_on,
+    "rsiHi": float(ui_rsi_hi),
+    "rsiLo": float(ui_rsi_lo),
+    "cdOn": ui_cd_on,
+    "cdPos": float(ui_cd_pos),
+    "vfOn": ui_vf_on,
+    "vfMult": float(ui_vf_mult),
+    "lvlOn": ui_lvl_on,
+    "lvlBuf": float(ui_lvl_buf),
+    "rdOn": ui_rd_on,
+    "rdStep": float(ui_rd_step),
+    "rdPts": float(ui_rd_pts),
+    "opOn": ui_op_on,
+    "vxOn": ui_vx_on,
+    "vxLook": int(ui_vx_look),
+    "tmOn": ui_tm_on,
     "tmS1": ("09:20", "09:35"),
     "tmS2": ("12:00", "13:30"),
     "tmS3": ("14:45", "15:00"),
-    "exOn": False,
-    "exDay": "Tuesday",
-    "beOn": False,
-    "beR": 1.0,
-    "beLock": 0.1,
-    "trOn": False,
-    "gdA": 8,
-    "gdB": 6,
-
-    # --- G3, G4, G9: OPTION OI + OPTION VOLUME PCR + FUTURES OI ---
-    "autoOc": True,
+    "exOn": ui_ex_on,
+    "exDay": ui_ex_day,
+    "beOn": ui_be_on,
+    "beR": float(ui_be_r),
+    "beLock": float(ui_be_lock),
+    "trOn": ui_tr_on,
+    "gdA": int(ui_gd_a),
+    "gdB": int(ui_gd_b),
+    "autoOc": ui_auto_oc,
     "ocN": int(ui_oc_n),
-    "pcrIn": 0.0,
-    "callWall": 0.0,
-    "putWall": 0.0,
-    "wallBuf": 0.3,
-    "pcrBull": 1.1,
-    "pcrBear": 0.9,
-
-    "ovOn": True,
+    "pcrIn": float(ui_pcr_in),
+    "callWall": float(ui_call_wall),
+    "putWall": float(ui_put_wall),
+    "wallBuf": float(ui_wall_buf),
+    "pcrBull": float(ui_pcr_bull),
+    "pcrBear": float(ui_pcr_bear),
+    "ovOn": ui_ov_on,
     "ovN": int(ui_ov_n),
-    "ovBull": 1.2,
-    "ovBear": 0.8,
-    "ovFeed": True,
-
-    "futOiOn": True,
-    "oiLook": 12,
-
-    "oiProbFilterOn": True,
-    "minOiProbCE": 55.0,
-    "minOiProbPE": 55.0,
-    "requireHighProbOnly": False,
-
-    # --- G1: Pre-Alert & Display ---
-    "preSec": 15,
-
-    # --- G2: Breadth (20 Heavyweight Stocks) ---
-    "flatPct": 0.02,
-    "implRef": 0.5,
-    "hiTh": 65.0,
-
-    # --- GSC: v28 Sector Strength ---
-    "scOn": True,
-    "scTh": 0.25,
-    "scFeed": False,
-    "scNeed": 2,
-    "scBankOk": True,
+    "ovBull": float(ui_ov_bull),
+    "ovBear": float(ui_ov_bear),
+    "ovFeed": ui_ov_feed,
+    "futOiOn": ui_fut_oi_on,
+    "oiLook": int(ui_oi_look),
+    "oiProbFilterOn": ui_oi_prob_on,
+    "minOiProbCE": float(ui_min_prob_ce),
+    "minOiProbPE": float(ui_min_prob_pe),
+    "requireHighProbOnly": ui_req_hi_prob,
+    "preSec": int(ui_pre_sec),
+    "flatPct": float(ui_flat_pct),
+    "implRef": float(ui_impl_ref),
+    "hiTh": float(ui_hi_th),
+    "scOn": ui_sc_on,
+    "scTh": float(ui_sc_th),
+    "scFeed": ui_sc_feed,
+    "scNeed": int(ui_sc_need),
+    "scBankOk": ui_sc_bank_ok,
 }
 
 # ==============================================================================
