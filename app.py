@@ -68,7 +68,7 @@ PARAMS = {
     "useHighLowForTarget": True,
 
     # --- G0: Chart, Market Window & Trade Settings ---
-    "chartType": "Index/Fut",
+    "chartType": "Auto (na...",
     "optStep": 50.0,
     "optLot": 65,
     "optDelta": 0.5,
@@ -79,7 +79,7 @@ PARAMS = {
     "needN": 4,
     "orBars": 3,
     "sess_start": "09:20",
-    "sess_end": "15:00",
+    "sess_end": "14:30",
     "extMult": 3.0,
     "coolBars": 6,
 
@@ -87,6 +87,10 @@ PARAMS = {
     "mtfOn": True,
     "mtf15Req": False,
     "mtfNeed": 3,
+    "mtfTf1": "3",
+    "mtfTf2": "15",
+    "bonusTf1": "60",
+    "bonusTf2": "240",
 
     # Sideways & DI Filter Toggles
     "adxOn": True,
@@ -114,7 +118,7 @@ PARAMS = {
     "wfMin": 1,
     "wfRule": "E",
     "wfA": 0.5,
-    "wfDip": 0.5,
+    "wfDip": 0.8,
     "wfWk": 40,
     "wfF": 3,
     "wfS": 5,
@@ -122,6 +126,7 @@ PARAMS = {
     "wfUp": 0.5,
     "wfUpPts": 0.0,
     "wfWick": True,
+    "fbArrowColor": "#2563eb",
 
     # --- G7: Daily 20MA Direction Gate (7 din / 5 din) ---
     "dgOn": True,
@@ -168,6 +173,7 @@ PARAMS = {
 
     # --- G3, G4, G9: OPTION OI + OPTION VOLUME PCR + FUTURES OI ---
     "autoOc": True,
+    "optSymBase": "AUTO",
     "ocN": 4,
     "pcrIn": 0.0,
     "callWall": 0.0,
@@ -178,11 +184,20 @@ PARAMS = {
 
     "ovOn": True,
     "ovN": 5,
+    "ovRoot": "NSE:NIFTY",
+    "ovExDay": "Tuesday",
+    "ovManualExp": "261201",
+    "ovPlot1": "Close",
+    "ovPlot2": "Close",
+    "ovPlot3": "Close",
+    "ovPlot4": "Close",
+    "ovPlot5": "Close",
     "ovBull": 1.2,
     "ovBear": 0.8,
     "ovFeed": True,
 
     "futOiOn": True,
+    "futSym": "NSE:NIFTY1!",
     "oiLook": 12,
 
     "oiProbFilterOn": True,
@@ -212,22 +227,26 @@ PARAMS = {
 _dd = dt.date.today()
 DASH = {
     "textSz": "tiny",
-    "showDetail": True,
+    "vp_textSz": "tiny",
+    "showDetail": False,
     "showMk": True,
-    "lblMode": "ON",
+    "wfPtsShow": True,
+    "lblMode": "Short",
     "lblBars": 0,
+    "topGapLines": 6,
+    "botGapLines": 2,
     "wfArrow": True,
     "wfMaShow": False,
-    "posSig": "Top Right", "posLg": "Bottom Right", "posBr": "Top Left", "posOi": "Middle Left",
-    "posLs": "Bottom Left", "scPos": "Top Center", "scPosA": "Middle Right", "posJ": "Bottom Center",
-    "posPh": "Bottom Center", "posXs": "Middle Right", "gdPos": "Top Center", "vp_pos": "Middle Left",
-    "showLog": True, "showList": True, "scAll": True, "jShow": True, "phShow": True,
-    "xsShow": True, "gdShow": True, "vp_showTbl": True,
+    "posSig": "Top Left", "posLg": "Bottom Right", "posBr": "Top Right", "posOi": "Bottom Left",
+    "posLs": "Top Center", "scPos": "Bottom Center", "scPosA": "Middle Left", "posJ": "Middle Right",
+    "posPh": "Middle Left", "posXs": "Top Center", "gdPos": "Middle Right", "vp_pos": "Middle Right",
+    "showLog": True, "showList": False, "scAll": False, "jShow": False, "phShow": False,
+    "xsShow": False, "gdShow": False, "vp_showTbl": True,
     "jPg": 1,
     "vp_useSpot": True,
-    "ph1S": (_dd - dt.timedelta(days=60)).isoformat(),
-    "ph2S": (_dd - dt.timedelta(days=30)).isoformat(),
-    "phE": _dd.isoformat(),
+    "ph1S": "2026-10-08",
+    "ph2S": "2026-10-24",
+    "phE": "2026-12-31",
 }
 
 def clamp_strike_span(n: int) -> int:
@@ -1533,9 +1552,12 @@ def render_html(tabs, eng, o, C, path):
     t0 = f5.index[0]
     ev = [e for e in eng.events if e["t"] >= t0]
     marks = []
-    lblOn = C.lblMode != "OFF" and (C.lblBars == 0 or True)
+    cutoff_t = f5.index[-int(C.lblBars)] if (C.lblBars and int(C.lblBars) > 0 and int(C.lblBars) <= len(f5)) else t0
+    fb_col = getattr(C, "fbArrowColor", "#2563eb")
+    wf_pts_on = getattr(C, "wfPtsShow", True)
     for e in ev:
         k = e["k"]
+        lblOn = C.lblMode != "OFF" and (e["t"] >= cutoff_t)
         if k == "BUY CE" and C.showMk:
             marks.append(dict(time=ts(e["t"]), position="belowBar", color="#16a34a" if e.get("p", 0) < 2 else "#84cc16", shape="arrowUp", text=(e["text"].replace("\n", " ") if lblOn else "BUY CE")))
         elif k == "BUY PE" and C.showMk:
@@ -1543,9 +1565,9 @@ def render_html(tabs, eng, o, C, path):
         elif k == "EXIT" and C.showMk:
             marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#16a34a" if e.get("win") else "#dc2626", shape="circle", text=e["text"] if lblOn else "EXIT"))
         elif k == "FINAL BUY CE" and C.wfArrow:
-            marks.append(dict(time=ts(e["t"]), position="belowBar", color="#2563eb", shape="arrowUp", text="FB " + e["text"]))
+            marks.append(dict(time=ts(e["t"]), position="belowBar", color=fb_col, shape="arrowUp", text=("FB " + e["text"] if wf_pts_on else "FB")))
         elif k == "FINAL BUY PE" and C.wfArrow:
-            marks.append(dict(time=ts(e["t"]), position="aboveBar", color="#2563eb", shape="arrowDown", text="FB " + e["text"]))
+            marks.append(dict(time=ts(e["t"]), position="aboveBar", color=fb_col, shape="arrowDown", text=("FB " + e["text"] if wf_pts_on else "FB")))
     if getattr(o, "preCE", False):
         marks.append(dict(time=ts(o.t_open), position="belowBar", color="#eab308", shape="square", text="PRE CE"))
     if getattr(o, "preAlertPE", False):
@@ -1570,7 +1592,14 @@ def render_html(tabs, eng, o, C, path):
     for t in tabs:
         if t["enabled"] and t["rows"]:
             zones.setdefault(t["pos"], []).append(_html_table(t, fs))
-    zhtml = "".join(f'<div class="z" style="{POS_CSS[p]}">{"".join(v)}</div>' for p, v in zones.items() if p in POS_CSS)
+    top_pad = max(6, int(getattr(C, "topGapLines", 6)) * 6)
+    bot_pad = max(12, int(getattr(C, "botGapLines", 2)) * 15)
+    pos_css_dyn = dict(POS_CSS)
+    for pk in ("Top Left", "Top Center", "Top Right"):
+        pos_css_dyn[pk] = pos_css_dyn[pk].replace("top:6px;", f"top:{top_pad}px;")
+    for pk in ("Bottom Left", "Bottom Center", "Bottom Right"):
+        pos_css_dyn[pk] = pos_css_dyn[pk].replace("bottom:30px;", f"bottom:{bot_pad}px;")
+    zhtml = "".join(f'<div class="z" style="{pos_css_dyn[p]}">{"".join(v)}</div>' for p, v in zones.items() if p in pos_css_dyn)
     title = f"NIFTY OPT PRO - {o.t_open:%d %b %H:%M}  close {o.close:.1f}"
     html = f'''<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="20"><title>{title}</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -1901,7 +1930,7 @@ class NiftyOptionProEngine:
             aligned=br["aligned"], bex=bex, sc=sc, gs=br["gs"],
             posSt=self.posSt, posEn=self.posEn, posSl=self.posSl, posT1=self.posT1, posT2=self.posT2,
             shOn=shOn, shEn=shEn, shSl=shSl, shT1=shT1, shT2=shT2, pnlV=pnlV,
-            lots=L["lots"], lotRisk=L["lotRisk"], riskRs=L["riskRs"], isPrem=(PARAMS["chartType"] != "Index/Fut"),
+            lots=L["lots"], lotRisk=L["lotRisk"], riskRs=L["riskRs"], isPrem=(PARAMS["chartType"] not in ("Index/Fut", "Auto (na...", "Auto")),
             close=close, t_open=bar_ts, f5=f5,
             relK=relK, relPrem=nan, revPlot=relK, callEff=callEff, putEff=putEff, callDist=callDist, putDist=putDist,
             nearCall=L["nearCall"], nearPut=L["nearPut"],
@@ -2923,6 +2952,11 @@ def run_streamlit_desktop_app():
             CONFIG["BACKTEST_ENTRY_TYPE"] = bt_entry
 
         st.header("3. Strike, Expiry & Target Exit")
+        _ct_opts = ["Auto (na...", "Index/Fut", "Option Prem"]
+        PARAMS["chartType"] = st.selectbox("Chart Type", _ct_opts, index=_ct_opts.index(PARAMS["chartType"]) if PARAMS["chartType"] in _ct_opts else 0)
+        PARAMS["optStep"] = st.number_input("Strike Step (Nifty 50, BankNifty 100)", min_value=5.0, value=float(PARAMS["optStep"]), step=5.0)
+        PARAMS["optSym"] = st.text_input("OPTION SYMBOL (e.g. NSE:NIFTY261123C25500, Khali = band)", value=PARAMS["optSym"])
+        PARAMS["optEntry"] = st.number_input("OPTION Premium Haath Se (0 = auto)", min_value=0.0, value=float(PARAMS["optEntry"]), step=1.0)
         PARAMS["strikeMode"] = st.selectbox("Strike Selection", ["ATM", "ITM_1", "ITM_2", "OTM_1"], index=["ATM", "ITM_1", "ITM_2", "OTM_1"].index(PARAMS["strikeMode"]))
         PARAMS["expiryMode"] = st.selectbox("Expiry Selection", ["CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"], index=["CURRENT_WEEK", "NEXT_WEEK", "MONTHLY", "MANUAL"].index(PARAMS["expiryMode"]))
         if PARAMS["expiryMode"] == "MANUAL":
@@ -2949,7 +2983,11 @@ def run_streamlit_desktop_app():
         PARAMS["wfS"] = st.number_input("Rule D: Slow MA Length", min_value=3, max_value=30, value=int(PARAMS["wfS"]))
         PARAMS["wfUp"] = st.number_input("No-Dip Breakout ATR Mult (0=OFF)", min_value=0.0, max_value=3.0, value=float(PARAMS["wfUp"]), step=0.1)
         PARAMS["wfUpPts"] = st.number_input("No-Dip Fixed Points Breakout (0=ATR)", min_value=0.0, max_value=200.0, value=float(PARAMS["wfUpPts"]), step=5.0)
+        DASH["wfPtsShow"] = st.checkbox("Blue arrow par accumulated points dikhao", value=DASH["wfPtsShow"])
         PARAMS["wfWick"] = st.checkbox("Cancel Watch if Wick Touches SL?", value=PARAMS["wfWick"])
+        DASH["wfArrow"] = st.checkbox("Final Buy candle par blue arrow dikhao", value=DASH["wfArrow"])
+        DASH["wfMaShow"] = st.checkbox("D rule: Watch ke dauran dono MA line dikhao", value=DASH["wfMaShow"])
+        PARAMS["fbArrowColor"] = st.color_picker("Final Buy arrow colour", value=PARAMS["fbArrowColor"])
 
         st.header("5. G7: Day Candle 20MA Back Direction Gate (7d / 5d)")
         PARAMS["dgOn"] = st.checkbox("Daily 20MA Direction Gate ON/OFF", value=PARAMS["dgOn"])
@@ -2985,6 +3023,10 @@ def run_streamlit_desktop_app():
         PARAMS["peHtf"] = st.selectbox("PE HTF Requirement", ["OFF", "1h PE", "1h + 4h PE"], index=["OFF", "1h PE", "1h + 4h PE"].index(PARAMS["peHtf"]))
         PARAMS["peBrMax"] = st.number_input("PE Max Breadth Score", min_value=0.0, max_value=100.0, value=float(PARAMS["peBrMax"]))
         PARAMS["peAdxMin"] = st.number_input("PE Min ADX (0 = OFF)", min_value=0.0, max_value=50.0, value=float(PARAMS["peAdxMin"]))
+        PARAMS["mtfTf1"] = st.selectbox("MTF Timeframe 1", ["3", "5", "15"], index=["3", "5", "15"].index(str(PARAMS["mtfTf1"])))
+        PARAMS["mtfTf2"] = st.selectbox("MTF Timeframe 2", ["15", "5", "30"], index=["15", "5", "30"].index(str(PARAMS["mtfTf2"])))
+        PARAMS["bonusTf1"] = st.selectbox("Bonus Timeframe 1 (+ ke liye)", ["60", "30", "15"], index=["60", "30", "15"].index(str(PARAMS["bonusTf1"])))
+        PARAMS["bonusTf2"] = st.selectbox("Bonus Timeframe 2 (++ ke liye)", ["240", "60", "D"], index=["240", "60", "D"].index(str(PARAMS["bonusTf2"])))
 
         st.header("8. ADX & DI+ / DI- Filters")
         PARAMS["adxOn"] = st.checkbox("Enable ADX Sideways Filter", value=PARAMS["adxOn"])
@@ -3012,12 +3054,28 @@ def run_streamlit_desktop_app():
         PARAMS["minOiProbCE"] = st.number_input("Min OI+Vol Prob % for CE", min_value=0.0, max_value=100.0, value=float(PARAMS["minOiProbCE"]))
         PARAMS["minOiProbPE"] = st.number_input("Min OI+Vol Prob % for PE", min_value=0.0, max_value=100.0, value=float(PARAMS["minOiProbPE"]))
         PARAMS["requireHighProbOnly"] = st.checkbox("Trade HIGH PROB Signals Only?", value=PARAMS["requireHighProbOnly"])
+        PARAMS["optSymBase"] = st.text_input("Option Symbol Base (AUTO ya e.g. NSE:NIFTY261123)", value=PARAMS["optSymBase"])
+        PARAMS["futSym"] = st.text_input("Futures Symbol (OI automatic ke liye)", value=PARAMS["futSym"])
         PARAMS["pcrIn"] = st.number_input("Manual OI PCR (0 = Auto)", min_value=0.0, max_value=5.0, value=float(PARAMS["pcrIn"]), step=0.05)
         PARAMS["callWall"] = st.number_input("Manual Call Wall (0 = Auto)", min_value=0.0, value=float(PARAMS["callWall"]), step=50.0)
         PARAMS["putWall"] = st.number_input("Manual Put Wall (0 = Auto)", min_value=0.0, value=float(PARAMS["putWall"]), step=50.0)
+        with st.expander("VOL PCR Indicator Extra Settings (Root, Expiry YYMMDD, Plots)"):
+            PARAMS["ovRoot"] = st.text_input("Option root (exchange:naam)", value=PARAMS["ovRoot"])
+            PARAMS["ovExDay"] = st.selectbox("VOL PCR Weekly Expiry Din", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].index(PARAMS["ovExDay"]))
+            PARAMS["ovManualExp"] = st.text_input("Expiry YYMMDD haath se (khali = auto, e.g. 261201)", value=PARAMS["ovManualExp"])
+            DASH["vp_useSpot"] = st.checkbox("ATM Nifty spot (root symbol) se nikalo", value=DASH["vp_useSpot"])
+            PARAMS["ovBull"] = st.number_input("VOL PCR >= itna = bullish", min_value=0.5, max_value=3.0, value=float(PARAMS["ovBull"]), step=0.05)
+            PARAMS["ovBear"] = st.number_input("VOL PCR <= itna = bearish", min_value=0.2, max_value=2.0, value=float(PARAMS["ovBear"]), step=0.05)
+            _plot_opts = ["Close", "Open", "High", "Low", "Volume"]
+            PARAMS["ovPlot1"] = st.selectbox("VOL PCR dropdown 1: PCR", _plot_opts, index=_plot_opts.index(PARAMS["ovPlot1"]))
+            PARAMS["ovPlot2"] = st.selectbox("VOL PCR dropdown 2: Call Wall", _plot_opts, index=_plot_opts.index(PARAMS["ovPlot2"]))
+            PARAMS["ovPlot3"] = st.selectbox("VOL PCR dropdown 3: Put Wall", _plot_opts, index=_plot_opts.index(PARAMS["ovPlot3"]))
+            PARAMS["ovPlot4"] = st.selectbox("VOL PCR dropdown 4: Call volume", _plot_opts, index=_plot_opts.index(PARAMS["ovPlot4"]))
+            PARAMS["ovPlot5"] = st.selectbox("VOL PCR dropdown 5: Put volume", _plot_opts, index=_plot_opts.index(PARAMS["ovPlot5"]))
 
         st.header("10. Breadth (20 Heavyweight Stocks) & Sector Strength")
         PARAMS["hiTh"] = st.number_input("Breadth High Prob Threshold", min_value=50.0, max_value=95.0, value=float(PARAMS["hiTh"]))
+        PARAMS["implRef"] = st.number_input("Implied Nifty move % = full strength", min_value=0.05, max_value=5.0, value=float(PARAMS["implRef"]), step=0.05)
         PARAMS["flatPct"] = st.number_input("Stock Flat % Threshold", min_value=0.0, max_value=1.0, value=float(PARAMS["flatPct"]), step=0.01)
         PARAMS["scOn"] = st.checkbox("Show Sector Strength Table", value=PARAMS["scOn"])
         PARAMS["scFeed"] = st.checkbox("Use Sector Strength Filter", value=PARAMS["scFeed"])
@@ -3025,36 +3083,92 @@ def run_streamlit_desktop_app():
         PARAMS["scNeed"] = st.slider("Heavy Sectors Required (of 3)", min_value=1, max_value=3, value=int(PARAMS["scNeed"]))
         PARAMS["scBankOk"] = st.checkbox("Require Banks Alignment", value=PARAMS["scBankOk"])
 
+        with st.expander("10B. 20 Heavyweight Symbols & Weights % (NSE Factsheet)"):
+            for _bi in range(len(BREADTH_STOCKS)):
+                _bsym, _bwt = BREADTH_STOCKS[_bi]
+                _cb1, _cb2 = st.columns([3, 2])
+                with _cb1:
+                    _nsym = st.text_input(f"{_bi+1:02d} Symbol", value=_bsym, key=f"bsym_{_bi}").strip().upper()
+                with _cb2:
+                    _nwt = st.number_input(f"{_bi+1:02d} Wt %", min_value=0.0, max_value=50.0, value=float(_bwt), step=0.01, key=f"bwt_{_bi}")
+                BREADTH_STOCKS[_bi] = (_nsym, float(_nwt))
+
         with st.expander("11. v22 Extra Filters (RSI, Volume, Level, VIX, Time, Expiry, Trail)"):
             PARAMS["lateOn"] = st.checkbox("Late-Entry Guard (High ADX+Breadth)", value=PARAMS["lateOn"])
+            PARAMS["lateAdx"] = st.number_input("Late guard: ADX >=", value=float(PARAMS["lateAdx"]), step=1.0)
+            PARAMS["lateBr"] = st.number_input("Late guard: Breadth Score >=", value=float(PARAMS["lateBr"]), step=1.0)
             PARAMS["arOn"] = st.checkbox("ADX Rising Filter", value=PARAMS["arOn"])
+            PARAMS["arN"] = st.number_input("ADX rising: compare bars back", min_value=1, max_value=20, value=int(PARAMS["arN"]))
             PARAMS["rsiOn"] = st.checkbox("RSI Cap Filter", value=PARAMS["rsiOn"])
             PARAMS["rsiHi"] = st.number_input("Max RSI for CE", value=float(PARAMS["rsiHi"]))
             PARAMS["rsiLo"] = st.number_input("Min RSI for PE", value=float(PARAMS["rsiLo"]))
+            PARAMS["cdOn"] = st.checkbox("Candle Close Strength Filter", value=PARAMS["cdOn"])
+            PARAMS["cdPos"] = st.number_input("Candle strength close ratio (0.6 = top/bot 40%)", min_value=0.1, max_value=1.0, value=float(PARAMS["cdPos"]), step=0.05)
             PARAMS["vfOn"] = st.checkbox("Volume Confirm Filter", value=PARAMS["vfOn"])
             PARAMS["vfMult"] = st.number_input("Volume 20-SMA Multiplier", value=float(PARAMS["vfMult"]), step=0.1)
-            PARAMS["cdOn"] = st.checkbox("Candle Close Strength Filter", value=PARAMS["cdOn"])
             PARAMS["lvlOn"] = st.checkbox("PDH / PDL Level Guard", value=PARAMS["lvlOn"])
+            PARAMS["lvlBuf"] = st.number_input("Level guard % buffer", min_value=0.01, max_value=2.0, value=float(PARAMS["lvlBuf"]), step=0.01)
             PARAMS["rdOn"] = st.checkbox("100-pt Round Level Guard", value=PARAMS["rdOn"])
+            PARAMS["rdStep"] = st.number_input("Round level gap (Nifty 100)", min_value=10.0, value=float(PARAMS["rdStep"]), step=10.0)
+            PARAMS["rdPts"] = st.number_input("Round level skip points", min_value=1.0, value=float(PARAMS["rdPts"]), step=1.0)
             PARAMS["opOn"] = st.checkbox("CE Only Above Today Open", value=PARAMS["opOn"])
             PARAMS["vxOn"] = st.checkbox("India VIX Filter", value=PARAMS["vxOn"])
+            PARAMS["vxLook"] = st.number_input("VIX compare bars back", min_value=1, max_value=60, value=int(PARAMS["vxLook"]))
             PARAMS["tmOn"] = st.checkbox("Blocked Time Windows Filter", value=PARAMS["tmOn"])
+            _ts1a = st.text_input("Band window 1 start", value=PARAMS["tmS1"][0])
+            _ts1b = st.text_input("Band window 1 end", value=PARAMS["tmS1"][1])
+            PARAMS["tmS1"] = (_ts1a, _ts1b)
+            _ts2a = st.text_input("Band window 2 start", value=PARAMS["tmS2"][0])
+            _ts2b = st.text_input("Band window 2 end", value=PARAMS["tmS2"][1])
+            PARAMS["tmS2"] = (_ts2a, _ts2b)
+            _ts3a = st.text_input("Band window 3 start", value=PARAMS["tmS3"][0])
+            _ts3b = st.text_input("Band window 3 end", value=PARAMS["tmS3"][1])
+            PARAMS["tmS3"] = (_ts3a, _ts3b)
             PARAMS["exOn"] = st.checkbox("Skip Expiry Day", value=PARAMS["exOn"])
             PARAMS["exDay"] = st.selectbox("Expiry Weekday", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].index(PARAMS["exDay"]))
             PARAMS["beOn"] = st.checkbox("Move SL to Breakeven (+1R)", value=PARAMS["beOn"])
+            PARAMS["beR"] = st.number_input("Breakeven kab: +R profit par", min_value=0.1, value=float(PARAMS["beR"]), step=0.1)
+            PARAMS["beLock"] = st.number_input("Breakeven SL entry se +R upar", min_value=0.0, value=float(PARAMS["beLock"]), step=0.05)
             PARAMS["trOn"] = st.checkbox("Trail SL on T1 to Target T2", value=PARAMS["trOn"])
+            PARAMS["gdA"] = st.number_input("Grade A min pass (of 9)", min_value=1, max_value=9, value=int(PARAMS["gdA"]))
+            PARAMS["gdB"] = st.number_input("Grade B min pass (of 9)", min_value=1, max_value=9, value=int(PARAMS["gdB"]))
 
-        st.header("12. Dashboard 12-Table Display Settings")
+        st.header("12. Dashboard 12-Table Display, Phase Dates & Positions")
+        _pos_opts = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"]
         DASH["textSz"] = st.selectbox("Table Font Size", ["tiny", "small", "normal"], index=["tiny", "small", "normal"].index(DASH["textSz"]))
-        DASH["showDetail"] = st.checkbox("Show Full Detail Rows", value=DASH["showDetail"])
+        DASH["showDetail"] = st.checkbox("Show Full Detail Rows (EMA/VWAP/RSI)", value=DASH["showDetail"])
+        DASH["showMk"] = st.checkbox("Chart par BUY/EXIT markers dikhao", value=DASH["showMk"])
         DASH["showLog"] = st.checkbox("Show Signal Log Table", value=DASH["showLog"])
         DASH["showList"] = st.checkbox("Show 20 Heavyweight Stocks Table", value=DASH["showList"])
         DASH["scAll"] = st.checkbox("Show All 15 Sectors Table", value=DASH["scAll"])
         DASH["jShow"] = st.checkbox("Show Trade Journal Table", value=DASH["jShow"])
+        DASH["jPg"] = st.number_input("Journal Page (15 trade/page)", min_value=1, value=int(DASH["jPg"]))
         DASH["phShow"] = st.checkbox("Show Phase-Wise Stats Table", value=DASH["phShow"])
+        DASH["ph1S"] = st.text_input("Phase 1 start (YYYY-MM-DD)", value=DASH["ph1S"])
+        DASH["ph2S"] = st.text_input("Phase 2 start (YYYY-MM-DD)", value=DASH["ph2S"])
+        DASH["phE"] = st.text_input("Phase 2 end (YYYY-MM-DD)", value=DASH["phE"])
         DASH["xsShow"] = st.checkbox("Show Extra Stats Table", value=DASH["xsShow"])
         DASH["gdShow"] = st.checkbox("Show Setup Grade Table", value=DASH["gdShow"])
         DASH["vp_showTbl"] = st.checkbox("Show VOL PCR Table", value=DASH["vp_showTbl"])
+        _lbl_opts = ["Short", "Detail", "ON", "OFF"]
+        DASH["lblMode"] = st.selectbox("Chart Labels", _lbl_opts, index=_lbl_opts.index(DASH["lblMode"]) if DASH["lblMode"] in _lbl_opts else 0)
+        DASH["lblBars"] = st.number_input("Labels sirf aakhri itne bar par (0=all)", min_value=0, value=int(DASH["lblBars"]))
+        PARAMS["preSec"] = st.number_input("Pre-alert seconds before close (0=OFF)", min_value=0, max_value=55, value=int(PARAMS["preSec"]))
+        DASH["topGapLines"] = st.number_input("Top gap lines", min_value=0, max_value=30, value=int(DASH["topGapLines"]))
+        DASH["botGapLines"] = st.number_input("Bottom gap lines", min_value=0, max_value=30, value=int(DASH["botGapLines"]))
+        with st.expander("Table Positions (All 12 Tables)"):
+            DASH["posSig"] = st.selectbox("Pos: Signal table", _pos_opts, index=_pos_opts.index(DASH["posSig"]))
+            DASH["posBr"] = st.selectbox("Pos: Breadth table", _pos_opts, index=_pos_opts.index(DASH["posBr"]))
+            DASH["posLs"] = st.selectbox("Pos: 20 stocks list", _pos_opts, index=_pos_opts.index(DASH["posLs"]))
+            DASH["posLg"] = st.selectbox("Pos: Signal log", _pos_opts, index=_pos_opts.index(DASH["posLg"]))
+            DASH["posOi"] = st.selectbox("Pos: OI table", _pos_opts, index=_pos_opts.index(DASH["posOi"]))
+            DASH["posJ"] = st.selectbox("Pos: Journal table", _pos_opts, index=_pos_opts.index(DASH["posJ"]))
+            DASH["posPh"] = st.selectbox("Pos: Phase table", _pos_opts, index=_pos_opts.index(DASH["posPh"]))
+            DASH["posXs"] = st.selectbox("Pos: Extra stats table", _pos_opts, index=_pos_opts.index(DASH["posXs"]))
+            DASH["gdPos"] = st.selectbox("Pos: Setup Grade table", _pos_opts, index=_pos_opts.index(DASH["gdPos"]))
+            DASH["scPos"] = st.selectbox("Pos: Sector table", _pos_opts, index=_pos_opts.index(DASH["scPos"]))
+            DASH["scPosA"] = st.selectbox("Pos: Sector poori list", _pos_opts, index=_pos_opts.index(DASH["scPosA"]))
+            DASH["vp_pos"] = st.selectbox("Pos: VOL PCR table", _pos_opts, index=_pos_opts.index(DASH["vp_pos"]))
 
     now_ist = dt.datetime.now(IST)
     st.info(
@@ -3182,7 +3296,7 @@ def run_streamlit_desktop_app():
             st.download_button("Download Live dashboard.html", dash_html, "dashboard.html", "text/html", key="dl_live_html")
             components.html(dash_html, height=820, scrolling=True)
         else:
-            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein â€” chart aur saari 12 tables yahan load ho jayengi.")
+            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein 鈥� chart aur saari 12 tables yahan load ho jayengi.")
 
         if engine.trade_journal:
             st.subheader("Session Trade Journal")
