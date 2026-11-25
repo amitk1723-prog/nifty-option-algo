@@ -504,6 +504,10 @@ class BrokerConnector:
         if self.broker == "DHAN":
             df = pd.read_csv("https://images.dhan.co/api-data/api-scrip-master.csv", low_memory=False)
             idx = df[(df["SEM_EXM_EXCH_ID"] == "NSE") & (df["SEM_TRADING_SYMBOL"] == "NIFTY")]
+            if "SEM_INSTRUMENT_NAME" in idx.columns:
+                _idx_only = idx[idx["SEM_INSTRUMENT_NAME"] == "INDEX"]
+                if not _idx_only.empty:
+                    idx = _idx_only
             if not idx.empty:
                 m["NIFTY_SPOT"] = str(idx.iloc[0]["SEM_SMST_SECURITY_ID"])
             vix = df[(df["SEM_EXM_EXCH_ID"] == "NSE") & (df["SEM_TRADING_SYMBOL"] == "INDIA VIX")]
@@ -583,6 +587,17 @@ class BrokerConnector:
             return month_exps[-1] if month_exps else exps[0]
         return exps[0]
 
+    last_error = ""
+
+    def _note_error(self, key, interval, res):
+        try:
+            if not isinstance(res, dict) or str(res.get("status", "")).lower() != "success":
+                msg = f"{key} [{interval}] -> {json.dumps(res, default=str)[:300]}"
+                self.last_error = msg
+                print(f"[Data Error] {msg}")
+        except Exception:
+            pass
+
     def get_candles(self, key: str, interval: str = "5", days: int = 10) -> pd.DataFrame:
         to_dt = dt.datetime.now(IST)
         from_dt = to_dt - dt.timedelta(days=days)
@@ -590,36 +605,63 @@ class BrokerConnector:
         if self.broker == "DHAN":
             sec_id = self.inst.get(key)
             if not sec_id:
+                self.last_error = f"'{key}' ka Security ID scrip master me nahi mila"
+                print(f"[Data Error] {self.last_error}")
                 return pd.DataFrame()
             seg = "IDX_I" if key in ("NIFTY_SPOT", "INDIAVIX") else ("NSE_FNO" if key == "NIFTY_FUT" else "NSE_EQ")
             itype = "INDEX" if seg == "IDX_I" else ("FUTIDX" if seg == "NSE_FNO" else "EQUITY")
 
             if interval == "D":
-                res = self.dhan.historical_daily_data(
-                    security_id=sec_id, exchange_segment=seg, instrument_type=itype,
-                    from_date=from_dt.strftime("%Y-%m-%d"), to_date=to_dt.strftime("%Y-%m-%d")
-                )
+                windows = [(from_dt, to_dt)]
             else:
-                req_int = "1" if interval == "3" else ("60" if interval == "240" else interval)
-                res = self.dhan.intraday_minute_data(
-                    security_id=sec_id, exchange_segment=seg, instrument_type=itype,
-                    from_date=from_dt.strftime("%Y-%m-%d 09:15:00"), to_date=to_dt.strftime("%Y-%m-%d 15:30:00"),
-                    interval=int(req_int)
-                )
-            d = res.get("data", {})
-            if not d or "timestamp" not in d or len(d["timestamp"]) == 0:
+                windows = []
+                w_s = from_dt
+                while w_s < to_dt:
+                    w_e = min(w_s + dt.timedelta(days=60), to_dt)
+                    windows.append((w_s, w_e))
+                    w_s = w_e
+
+            frames = []
+            for w_from, w_to in windows:
+                if interval == "D":
+                    res = self.dhan.historical_daily_data(
+                        security_id=sec_id, exchange_segment=seg, instrument_type=itype,
+                        from_date=w_from.strftime("%Y-%m-%d"), to_date=w_to.strftime("%Y-%m-%d")
+                    )
+                else:
+                    req_int = "1" if interval == "3" else ("60" if interval == "240" else interval)
+                    res = self.dhan.intraday_minute_data(
+                        security_id=sec_id, exchange_segment=seg, instrument_type=itype,
+                        from_date=w_from.strftime("%Y-%m-%d 09:15:00"), to_date=w_to.strftime("%Y-%m-%d 15:30:00"),
+                        interval=int(req_int)
+                    )
+                time.sleep(0.25)  # Dhan data API rate-limit se bachne ke liye
+                self._note_error(key, interval, res)
+                d = res.get("data", {}) if isinstance(res, dict) else {}
+                if not isinstance(d, dict) or "timestamp" not in d or len(d["timestamp"]) == 0:
+                    continue
+                ts_raw = pd.Series(d["timestamp"], dtype="float64")
+                if ts_raw.max() < time.time() - 3 * 365 * 86400:
+                    ts_raw = ts_raw + 315532800  # purana Dhan 1980-epoch format fix
+                n_rows = len(d["close"])
+                fr = pd.DataFrame({
+                    "timestamp": pd.to_datetime(ts_raw.values, unit="s", utc=True).tz_convert(IST),
+                    "open": d["open"], "high": d["high"], "low": d["low"],
+                    "close": d["close"],
+                    "volume": d.get("volume", [0] * n_rows),
+                    "oi": d.get("open_interest", [0] * n_rows)
+                }).set_index("timestamp")
+                frames.append(fr)
+
+            if not frames:
                 return pd.DataFrame()
-            df = pd.DataFrame({
-                "timestamp": pd.to_datetime(d["timestamp"], unit="s", utc=True).tz_convert(IST),
-                "open": d["open"], "high": d["high"], "low": d["low"],
-                "close": d["close"],
-                "volume": d.get("volume", [0] * len(d["close"])),
-                "oi": d.get("open_interest", [0] * len(d["close"]))
-            }).set_index("timestamp").sort_index()
+            df = pd.concat(frames)
+            df = df[~df.index.duplicated(keep="last")].sort_index()
 
         elif self.broker == "UPSTOX":
             ikey = self.inst.get(key)
             if not ikey:
+                self.last_error = f"'{key}' ka instrument key nahi mila"
                 return pd.DataFrame()
             umap = {"1": ("minutes", "1"), "3": ("minutes", "1"), "5": ("minutes", "5"),
                     "15": ("minutes", "15"), "60": ("hours", "1"), "240": ("hours", "1"), "D": ("days", "1")}
@@ -628,6 +670,7 @@ class BrokerConnector:
                 f"https://api.upstox.com/v3/historical-candle/{ikey}/{utype}/{uval}/{to_dt.strftime('%Y-%m-%d')}/{from_dt.strftime('%Y-%m-%d')}",
                 headers=self.headers, timeout=10
             ).json()
+            self._note_error(key, interval, r1)
             c_hist = r1.get("data", {}).get("candles", [])
             c_intra = []
             if interval != "D":
@@ -2405,6 +2448,8 @@ def run_backtest(broker: BrokerConnector, days: int = 30):
 
     if df_5m.empty or len(df_5m) < 100:
         msg = f"Backtest ke liye paryapt historical data nahi mila (5m bars: {len(df_5m)}, 3m: {len(df_3m)}, 15m: {len(df_15m)}, 1h: {len(df_1h)}, 4h: {len(df_4h)}, D: {len(df_d)})."
+        if getattr(broker, "last_error", ""):
+            msg += f" | Broker error: {broker.last_error}"
         print(msg)
         return {"error": msg, "counts": {"5m": len(df_5m), "3m": len(df_3m), "15m": len(df_15m), "1h": len(df_1h), "4h": len(df_4h), "D": len(df_d)}}
 
@@ -2704,6 +2749,14 @@ def run_streamlit_desktop_app():
 
     connector = st.session_state.broker_conn
 
+    with st.expander("Data Connection Test (Token / Data API check)"):
+        if st.button("Test Data Now"):
+            _t = connector.get_candles(CONFIG["CHART_SYMBOL"], interval="D", days=10)
+            if _t.empty:
+                st.error(f"Data nahi aaya. Reason: {connector.last_error or 'unknown (Security ID / token check karein)'}")
+            else:
+                st.success(f"OK: {len(_t)} daily bars, last close {_t['close'].iloc[-1]:.2f} ({_t.index[-1]:%Y-%m-%d})")
+
     if run_mode == "BACKTEST":
         st.subheader(f"Historical Backtest ({CONFIG['BACKTEST_DAYS']} Days | {CONFIG['BACKTEST_ENTRY_TYPE']})")
         if st.button("Run Full Multi-Timeframe Backtest Now", type="primary"):
@@ -2776,7 +2829,7 @@ def run_streamlit_desktop_app():
             st.download_button("Download Live dashboard.html", dash_html, "dashboard.html", "text/html", key="dl_live_html")
             components.html(dash_html, height=820, scrolling=True)
         else:
-            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein — chart aur saari 12 tables yahan load ho jayengi.")
+            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein â€” chart aur saari 12 tables yahan load ho jayengi.")
 
         if engine.trade_journal:
             st.subheader("Session Trade Journal")
