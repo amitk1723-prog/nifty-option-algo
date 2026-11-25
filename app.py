@@ -42,6 +42,15 @@ CONFIG = {
     "DASH_ON": True,
     "DASH_HTML_PATH": "dashboard.html",
     "DASH_CONSOLE_TABLES": False,
+
+    # --- PAPER TRADING (LIVE market me virtual orders, real option LTP par fill) ---
+    "PAPER_TRADING": os.environ.get("PAPER_TRADING", "0") == "1",
+    "PAPER_CAPITAL": 100000.0,
+    "PAPER_BROKERAGE_PER_ORDER": 20.0,
+    "PAPER_SLIPPAGE_PTS": 0.0,
+    "PAPER_ORDERS_CSV": "paper_orders_log.csv",
+    "PAPER_TRADES_CSV": "paper_trades_journal.csv",
+    "PAPER_STATE_JSON": "paper_open_positions.json",
 }
 
 # ==============================================================================
@@ -270,6 +279,7 @@ def show_real_trade_report(connector=None):
         except Exception as e:
             print(f"    Broker book fetch info: {e}")
     print("=" * 82 + "\n")
+    show_paper_trade_report(connector)
 
 
 def interactive_option_selector(connector=None):
@@ -326,6 +336,13 @@ def interactive_option_selector(connector=None):
     if CONFIG["RUN_MODE"] == "LIVE":
         o_in = input("\n[6] Order Execution (1=Safe Alert Mode, 2=AUTO LIVE ORDER, Enter=1): ").strip()
         CONFIG["AUTO_PLACE_ORDER"] = (o_in == "2")
+        p_in = input("    Paper Trading (virtual orders, real option LTP par)? (1=OFF, 2=ON, Enter=1): ").strip()
+        CONFIG["PAPER_TRADING"] = (p_in == "2")
+        if CONFIG["PAPER_TRADING"]:
+            CONFIG["AUTO_PLACE_ORDER"] = False  # paper ON ho to real order kabhi nahi jayega
+            pc_in = input(f"    Paper Capital Rs (Enter={CONFIG['PAPER_CAPITAL']:.0f}): ").strip()
+            if pc_in.replace(".", "", 1).isdigit() and float(pc_in) > 0:
+                CONFIG["PAPER_CAPITAL"] = float(pc_in)
 
     d_in2 = input("\n[7] Dashboard (1=ON, 2=OFF, 3=ON+Console, Enter=1): ").strip()
     CONFIG["DASH_ON"] = (d_in2 != "2")
@@ -462,6 +479,254 @@ def calc_vwap(df: pd.DataFrame) -> pd.Series:
 
 
 # ==============================================================================
+# 4A. PAPER TRADING ENGINE (LIVE MARKET ME VIRTUAL ORDERS - REAL OPTION LTP PAR FILL)
+# ==============================================================================
+def _pnan(x):
+    return x is None or (isinstance(x, float) and math.isnan(x))
+
+
+def _paper_append_csv(path, row):
+    try:
+        pd.DataFrame([row]).to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+    except Exception as e:
+        print(f"[Paper CSV Error] {e}")
+
+
+class PaperTrader:
+    """Virtual ledger: BUY/SELL orders ko real option chain LTP par fill karta hai.
+    Brokerage + slippage lagta hai, CSV + JSON me save hota hai (restart safe)."""
+
+    def __init__(self):
+        self.orders_csv = CONFIG.get("PAPER_ORDERS_CSV", "paper_orders_log.csv")
+        self.trades_csv = CONFIG.get("PAPER_TRADES_CSV", "paper_trades_journal.csv")
+        self.state_json = CONFIG.get("PAPER_STATE_JSON", "paper_open_positions.json")
+        self.open = {}
+        self.trade_seq = 0
+        self._load()
+
+    @staticmethod
+    def _key(side, strike, expiry):
+        return f"{side}|{int(strike)}|{expiry}"
+
+    def _load(self):
+        if os.path.exists(self.state_json):
+            try:
+                with open(self.state_json, "r", encoding="utf-8") as f:
+                    st_ = json.load(f)
+                self.open = st_.get("open", {}) or {}
+                self.trade_seq = int(st_.get("trade_seq", 0))
+            except Exception:
+                pass
+
+    def _save(self):
+        try:
+            with open(self.state_json, "w", encoding="utf-8") as f:
+                json.dump({"open": self.open, "trade_seq": self.trade_seq}, f)
+        except Exception as e:
+            print(f"[Paper State Error] {e}")
+
+    def reset(self):
+        for p in (self.orders_csv, self.trades_csv, self.state_json):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        self.open = {}
+        self.trade_seq = 0
+
+    def _log_order(self, now, action, side, strike, expiry, qty, fill, spot, fee, src, status, note=""):
+        _paper_append_csv(self.orders_csv, {
+            "Time": now.strftime("%Y-%m-%d %H:%M:%S"), "Action": action,
+            "Contract": f"NIFTY {int(strike)} {side}", "Expiry": expiry,
+            "Lots": int(round(qty / PARAMS["optLot"])) if PARAMS["optLot"] else 0, "Qty": int(qty),
+            "FillPremium": (round(fill, 2) if not _pnan(fill) else None),
+            "Spot": (round(float(spot), 2) if not _pnan(spot) else None),
+            "Fee_Rs": round(fee, 2), "PriceSource": src, "Status": status, "Note": note})
+
+    def buy(self, side, strike, expiry, lots, prem, spot, src="CHAIN_LTP"):
+        qty = int(lots * PARAMS["optLot"])
+        slip = float(CONFIG.get("PAPER_SLIPPAGE_PTS", 0.0))
+        fee = float(CONFIG.get("PAPER_BROKERAGE_PER_ORDER", 20.0))
+        fill = (float(prem) + slip) if not _pnan(prem) else float("nan")
+        now = dt.datetime.now(IST)
+        key = self._key(side, strike, expiry)
+        pos = self.open.get(key)
+        if pos is None:
+            self.trade_seq += 1
+            pos = dict(id=f"PT-{now:%Y%m%d}-{self.trade_seq}", side=side, strike=float(strike), expiry=expiry,
+                       qty=0, lots=0, avg=float("nan"), entry_time=now.strftime("%Y-%m-%d %H:%M:%S"),
+                       entry_spot=(float(spot) if not _pnan(spot) else float("nan")), fees=0.0,
+                       src=src, mode=PARAMS["strikeMode"])
+            self.open[key] = pos
+        if pos["qty"] > 0 and not _pnan(pos["avg"]) and not _pnan(fill):
+            pos["avg"] = (pos["avg"] * pos["qty"] + fill * qty) / (pos["qty"] + qty)
+        elif pos["qty"] == 0:
+            pos["avg"] = fill
+        pos["qty"] += qty
+        pos["lots"] += int(lots)
+        pos["fees"] += fee
+        if _pnan(fill):
+            pos["src"] = "SPOT_DELTA_EST"
+        self._log_order(now, "BUY", side, strike, expiry, qty, fill, spot, fee, ("CHAIN_LTP" if not _pnan(fill) else "SPOT_DELTA_EST"), "FILLED")
+        self._save()
+        return dict(id=pos["id"], qty=qty, fill=fill, fee=fee)
+
+    def sell(self, side, strike, expiry, lots, prem, spot, reason="SELL"):
+        key = self._key(side, strike, expiry)
+        pos = self.open.get(key)
+        now = dt.datetime.now(IST)
+        fee = float(CONFIG.get("PAPER_BROKERAGE_PER_ORDER", 20.0))
+        slip = float(CONFIG.get("PAPER_SLIPPAGE_PTS", 0.0))
+        fill = (float(prem) - slip) if not _pnan(prem) else float("nan")
+        want_qty = int(lots * PARAMS["optLot"])
+        if pos is None or pos["qty"] <= 0:
+            self._log_order(now, "SELL", side, strike, expiry, want_qty, fill, spot, 0.0, "-", "IGNORED",
+                            "Paper me is contract ki koi open BUY position nahi thi (Blue Arrow se pehle exit)")
+            return None
+        qty = min(want_qty, int(pos["qty"]))
+        if qty <= 0:
+            return None
+        before = pos["qty"]
+        entry_fee_share = pos["fees"] * (qty / before)
+        pos["fees"] -= entry_fee_share
+        if not _pnan(fill) and not _pnan(pos["avg"]):
+            prem_pts = fill - pos["avg"]
+            src = "CHAIN_LTP"
+        else:
+            sgn = 1 if side == "CE" else -1
+            if _pnan(spot) or _pnan(pos["entry_spot"]):
+                prem_pts, src = 0.0, "NO_PRICE"
+            else:
+                prem_pts = sgn * (float(spot) - pos["entry_spot"]) * PARAMS["optDelta"]
+                src = "SPOT_DELTA_EST"
+        gross = prem_pts * qty
+        fees = entry_fee_share + fee
+        net = gross - fees
+        pos["qty"] -= qty
+        pos["lots"] = max(0, pos["lots"] - int(round(qty / PARAMS["optLot"])))
+        closed = pos["qty"] <= 0
+        row = {
+            "TradeID": pos["id"], "Date": now.strftime("%Y-%m-%d"),
+            "EntryTime": pos["entry_time"], "ExitTime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "Contract": f"NIFTY {int(strike)} {side}", "StrikeMode": pos.get("mode", PARAMS["strikeMode"]), "Expiry": expiry,
+            "Lots": int(round(qty / PARAMS["optLot"])), "Qty": qty,
+            "EntrySpot": (round(pos["entry_spot"], 2) if not _pnan(pos["entry_spot"]) else None),
+            "ExitSpot": (round(float(spot), 2) if not _pnan(spot) else None),
+            "EntryPremium": (round(pos["avg"], 2) if not _pnan(pos["avg"]) else None),
+            "ExitPremium": (round(fill, 2) if not _pnan(fill) else None),
+            "PnL_Prem_Pts": round(prem_pts, 2), "GrossPnL_Rs": round(gross, 2),
+            "Fees_Rs": round(fees, 2), "NetPnL_Rs": round(net, 2),
+            "ExitReason": reason, "PriceSource": src, "Status": ("CLOSED" if closed else "PARTIAL")}
+        _paper_append_csv(self.trades_csv, row)
+        self._log_order(now, "SELL", side, strike, expiry, qty, fill, spot, fee, src, "FILLED", reason)
+        if closed:
+            del self.open[key]
+        self._save()
+        return row
+
+    def trades_df(self):
+        if os.path.exists(self.trades_csv):
+            try:
+                return pd.read_csv(self.trades_csv)
+            except Exception:
+                pass
+        return pd.DataFrame()
+
+    def orders_df(self):
+        if os.path.exists(self.orders_csv):
+            try:
+                return pd.read_csv(self.orders_csv)
+            except Exception:
+                pass
+        return pd.DataFrame()
+
+    def summary(self, connector=None):
+        df = self.trades_df()
+        d = dict(legs=0, wins=0, losses=0, gross=0.0, fees=0.0, net=0.0, win_rate=float("nan"), unreal=0.0, open=[])
+        if not df.empty and "NetPnL_Rs" in df.columns:
+            d["legs"] = len(df)
+            d["wins"] = int((df["NetPnL_Rs"] > 0).sum())
+            d["losses"] = int((df["NetPnL_Rs"] <= 0).sum())
+            d["gross"] = float(df["GrossPnL_Rs"].sum())
+            d["fees"] = float(df["Fees_Rs"].sum())
+            d["net"] = float(df["NetPnL_Rs"].sum())
+            d["win_rate"] = d["wins"] * 100.0 / d["legs"] if d["legs"] > 0 else float("nan")
+        for key, pos in self.open.items():
+            ltp = connector._paper_ltp(pos["side"], pos["strike"]) if connector is not None else float("nan")
+            un = float("nan")
+            if not _pnan(ltp) and not _pnan(pos["avg"]):
+                un = (ltp - pos["avg"]) * pos["qty"]
+                d["unreal"] += un
+            d["open"].append({
+                "TradeID": pos["id"], "Contract": f"NIFTY {int(pos['strike'])} {pos['side']}", "Expiry": pos["expiry"],
+                "Lots": pos["lots"], "Qty": pos["qty"], "EntryTime": pos["entry_time"],
+                "AvgEntryPremium": (round(pos["avg"], 2) if not _pnan(pos["avg"]) else None),
+                "LTP_Now": (round(ltp, 2) if not _pnan(ltp) else None),
+                "Unrealized_Rs": (round(un, 2) if not _pnan(un) else None)})
+        d["equity"] = float(CONFIG.get("PAPER_CAPITAL", 100000.0)) + d["net"] + d["unreal"]
+        return d
+
+
+def show_paper_trade_report(connector=None):
+    if not (CONFIG.get("PAPER_TRADING", False) or os.path.exists(CONFIG.get("PAPER_TRADES_CSV", "paper_trades_journal.csv"))
+            or os.path.exists(CONFIG.get("PAPER_STATE_JSON", "paper_open_positions.json"))):
+        return
+    pt = connector._get_paper() if connector is not None else PaperTrader()
+    s = pt.summary(connector)
+    print("\n" + "=" * 82)
+    print("   PAPER TRADING REPORT (VIRTUAL - REAL OPTION LTP PAR FILL)")
+    print("=" * 82)
+    print(f"    Paper Capital: Rs {CONFIG.get('PAPER_CAPITAL', 100000.0):,.0f} | Equity: Rs {s['equity']:,.0f}")
+    print(f"    Exit Legs: {s['legs']} (Win {s['wins']} / Loss {s['losses']}) | Gross: Rs {s['gross']:+,.0f} | Fees: Rs {s['fees']:,.0f} | Net: Rs {s['net']:+,.0f} | Open Unrealized: Rs {s['unreal']:+,.0f}")
+    if s["open"]:
+        print("    OPEN POSITIONS:")
+        print(pd.DataFrame(s["open"]).to_string(index=False))
+    df = pt.trades_df()
+    if not df.empty:
+        print("-" * 82)
+        print(df.to_string(index=False))
+    print("=" * 82 + "\n")
+
+
+def paper_panel_streamlit(connector=None, key_prefix="pp"):
+    import streamlit as st
+    pt = connector._get_paper() if connector is not None else PaperTrader()
+    s = pt.summary(connector)
+    st.subheader("PAPER TRADING (Virtual Orders - Real Option LTP Fill)")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Paper Equity (Rs)", f"{s['equity']:,.0f}", f"{s['net'] + s['unreal']:+,.0f}")
+    m2.metric("Realized Net P&L (Rs)", f"{s['net']:+,.0f}")
+    m3.metric("Open Unrealized (Rs)", f"{s['unreal']:+,.0f}", f"{len(s['open'])} open")
+    m4.metric("Exit Legs  W / L", f"{s['wins']} / {s['losses']}")
+    m5.metric("Win Rate", "--" if _pnan(s["win_rate"]) else f"{s['win_rate']:.0f}%")
+    st.caption(f"Capital Rs {CONFIG.get('PAPER_CAPITAL', 100000.0):,.0f} | Brokerage Rs {CONFIG.get('PAPER_BROKERAGE_PER_ORDER', 20.0):.0f}/order | "
+               f"Slippage {CONFIG.get('PAPER_SLIPPAGE_PTS', 0.0):.1f} pts | Fees total Rs {s['fees']:,.0f}")
+    if s["open"]:
+        st.markdown("**Open Paper Positions**")
+        st.dataframe(pd.DataFrame(s["open"]), use_container_width=True)
+    else:
+        st.info("Abhi koi open paper position nahi hai. Blue Arrow (Final Buy) par virtual BUY apne aap lagega.")
+    df_t = pt.trades_df()
+    if not df_t.empty:
+        st.markdown("**Paper Trades Journal**")
+        st.dataframe(df_t, use_container_width=True)
+        st.download_button("Download Paper Trades CSV", df_t.to_csv(index=False).encode("utf-8"),
+                           CONFIG.get("PAPER_TRADES_CSV", "paper_trades_journal.csv"), "text/csv", key=f"{key_prefix}_dl_trades")
+    df_o = pt.orders_df()
+    if not df_o.empty:
+        with st.expander("Paper Orders Log (har BUY / SELL order)"):
+            st.dataframe(df_o, use_container_width=True)
+            st.download_button("Download Paper Orders CSV", df_o.to_csv(index=False).encode("utf-8"),
+                               CONFIG.get("PAPER_ORDERS_CSV", "paper_orders_log.csv"), "text/csv", key=f"{key_prefix}_dl_orders")
+    with st.expander("Reset Paper Ledger"):
+        sure = st.checkbox("Haan, saara paper trade record delete karna hai", key=f"{key_prefix}_sure")
+        if st.button("Reset Paper Ledger", key=f"{key_prefix}_reset") and sure:
+            pt.reset()
+            st.success("Paper ledger reset ho gaya. Page refresh karein.")
+
+
+# ==============================================================================
 # 4. BROKER CONNECTOR
 # ==============================================================================
 class BrokerConnector:
@@ -537,6 +802,69 @@ class BrokerConnector:
                     m[sym] = row.iloc[0]["instrument_key"]
             m["_DF"] = df
         return m
+
+    # ---------------- PAPER TRADING HELPERS ----------------
+    last_ltp_map = {}
+    last_spot = float("nan")
+    paper = None
+    paper_reason = ""
+
+    def _get_paper(self):
+        if self.paper is None:
+            self.paper = PaperTrader()
+        return self.paper
+
+    def _paper_ltp(self, side: str, strike: float) -> float:
+        rec = (self.last_ltp_map or {}).get(round(float(strike), 2))
+        if rec:
+            try:
+                v = float(rec.get("ce" if side == "CE" else "pe", np.nan))
+                if not np.isnan(v) and v > 0:
+                    return v
+            except Exception:
+                pass
+        return float("nan")
+
+    def _paper_notify(self, text: str):
+        print(text)
+        tok, cid = CONFIG.get("TELEGRAM_BOT_TOKEN", ""), CONFIG.get("TELEGRAM_CHAT_ID", "")
+        if tok and cid:
+            try:
+                requests.post(f"https://api.telegram.org/bot{tok}/sendMessage", json={"chat_id": cid, "text": text}, timeout=5)
+            except Exception:
+                pass
+
+    def paper_order(self, side: str, strike: float, lots: int, action: str = "BUY", expiry_date: str = ""):
+        pt = self._get_paper()
+        exp = expiry_date or self.get_selected_expiry()
+        prem = self._paper_ltp(side, strike)
+        if np.isnan(prem):
+            # option chain ke ATM +-N me ye strike nahi mila: seedha is strike ke liye chain dobara lo
+            try:
+                _prev = self.last_ltp_map
+                time.sleep(3.1)  # Dhan option-chain rate limit (1 request / 3 sec)
+                self.get_option_chain_metrics(float(strike), float(strike), PARAMS["ocN"], PARAMS["ovN"])
+                prem = self._paper_ltp(side, strike)
+                self.last_ltp_map = _prev
+            except Exception:
+                pass
+        spot = self.last_spot
+        if action == "BUY":
+            r = pt.buy(side, strike, exp, lots, prem, spot)
+            px_txt = "LTP nahi mila (spot-delta estimate use hoga)" if np.isnan(r["fill"]) else f"{r['fill']:.2f}"
+            self._paper_notify(
+                f"[PAPER] BUY NIFTY {int(strike)} {side} [{exp}] ({PARAMS['strikeMode']}) | Lots: {lots} (Qty {r['qty']}) "
+                f"@ premium {px_txt} | Spot: {spot:.1f} | Trade: {r['id']}"
+            )
+        else:
+            r = pt.sell(side, strike, exp, lots, prem, spot, reason=(self.paper_reason or "SELL"))
+            if r is None:
+                self._paper_notify(f"[PAPER] SELL ignore hua: NIFTY {int(strike)} {side} ki koi open paper BUY position nahi thi.")
+            else:
+                self._paper_notify(
+                    f"[PAPER] SELL NIFTY {int(strike)} {side} [{exp}] | Qty {r['Qty']} | Entry {r['EntryPremium']} -> Exit {r['ExitPremium']} "
+                    f"| {r['ExitReason']} | Net P&L: Rs {r['NetPnL_Rs']:+,.0f} ({r['PriceSource']}) | {r['Status']}"
+                )
 
     def get_broker_live_trade_summary(self) -> str:
         if self.broker == "DHAN":
@@ -784,6 +1112,9 @@ class BrokerConnector:
         except Exception as e:
             print(f"Option Chain fetch warning: {e}")
 
+        if ltp_map:
+            self.last_ltp_map = ltp_map  # paper trading fill ke liye latest option LTP
+
         oc_ce_sum = sum(oi_ce.values())
         oc_pe_sum = sum(oi_pe.values())
         oc_ok = (oi_cnt >= 4) and (oc_ce_sum > 0) and (oc_pe_sum > 0)
@@ -812,6 +1143,12 @@ class BrokerConnector:
         }
 
     def place_option_order(self, side: str, strike: float, lots: int, action: str = "BUY", expiry_date: str = "") -> bool:
+        if CONFIG.get("PAPER_TRADING", False) and CONFIG["RUN_MODE"] == "LIVE" and lots > 0:
+            try:
+                self.paper_order(side, strike, lots, action=action, expiry_date=expiry_date)
+            except Exception as e:
+                print(f"[Paper Order Error] {e}")
+            return False  # paper mode me kabhi real broker order nahi jayega
         if not CONFIG["AUTO_PLACE_ORDER"] or lots <= 0 or CONFIG["RUN_MODE"] != "LIVE":
             return False
         qty = lots * PARAMS["optLot"]
@@ -1704,6 +2041,7 @@ class NiftyOptionProEngine:
         rem_ratio = (self.remainingLots / self.activeLots) if self.activeLots > 0 else 1.0
         final_pnl = self.realizedTradePnl + sgn * (current_price - self.posEn) * rem_ratio
 
+        self.broker.paper_reason = reason
         if self.remainingLots > 0:
             self.broker.place_option_order(side_str, self.activeStrike, self.remainingLots, action="SELL", expiry_date=self.activeExpiry)
 
@@ -2139,6 +2477,7 @@ class NiftyOptionProEngine:
             self.posSl = self.posEn
             self.posMv = True
             side_str = "CE" if self.posSt == 1 else "PE"
+            self.broker.paper_reason = "T1_PARTIAL"
             self.broker.place_option_order(side_str, self.activeStrike, lots_to_book, action="SELL", expiry_date=self.activeExpiry)
             self.alert(f"T1 PARTIAL BOOKED ({PARAMS['t1ExitPct']}%) @ {t1_px:.1f} | Remaining trailing to T2 ({self.posT2:.1f}), SL at Entry ({self.posSl:.1f})")
             if self.remainingLots == 0:
@@ -2196,6 +2535,7 @@ class NiftyOptionProEngine:
             total_trade_pnl = self.realizedTradePnl + sgn * (exPx - self.posEn) * rem_ratio
             side_str = "CE" if self.posSt == 1 else "PE"
 
+            self.broker.paper_reason = exRes
             if self.remainingLots > 0:
                 self.broker.place_option_order(side_str, self.activeStrike, self.remainingLots, action="SELL", expiry_date=self.activeExpiry)
 
@@ -2416,6 +2756,7 @@ class NiftyOptionProEngine:
         df_vix = self.broker.get_candles("INDIAVIX", interval="5", days=3)
 
         close = df_5m["close"].iloc[-1]
+        self.broker.last_spot = float(close)  # paper trading ke liye latest spot
         atmNow = round(close / PARAMS["optStep"]) * PARAMS["optStep"]
         if self.ovCtr is None and atmNow > 0:
             self.ovCtr = atmNow
@@ -2560,12 +2901,21 @@ def run_streamlit_desktop_app():
         CONFIG["RUN_MODE"] = run_mode
 
         if run_mode == "LIVE":
+            paper_on = st.checkbox("PAPER TRADING (virtual orders, real option LTP par)", value=CONFIG["PAPER_TRADING"])
+            CONFIG["PAPER_TRADING"] = paper_on
+            if paper_on:
+                CONFIG["PAPER_CAPITAL"] = st.number_input("Paper Capital (Rs)", min_value=10000.0, value=float(CONFIG["PAPER_CAPITAL"]), step=10000.0)
+                CONFIG["PAPER_BROKERAGE_PER_ORDER"] = st.number_input("Paper Brokerage per Order (Rs)", min_value=0.0, value=float(CONFIG["PAPER_BROKERAGE_PER_ORDER"]), step=5.0)
+                CONFIG["PAPER_SLIPPAGE_PTS"] = st.number_input("Paper Slippage (option pts per fill)", min_value=0.0, value=float(CONFIG["PAPER_SLIPPAGE_PTS"]), step=0.5)
             auto_order = st.checkbox("AUTO PLACE LIVE BROKER ORDER (Blue Arrow)?", value=CONFIG["AUTO_PLACE_ORDER"])
             CONFIG["AUTO_PLACE_ORDER"] = auto_order
             if auto_order:
                 st.error("LIVE ORDER EXECUTION ON: Real orders will be placed on broker!")
             else:
                 st.info("SAFE MODE: Only Alerts, Dashboard & Journal Logging (No real order).")
+            if CONFIG.get("PAPER_TRADING", False):
+                CONFIG["AUTO_PLACE_ORDER"] = False  # paper ON ho to real order kabhi nahi jayega
+                st.success("PAPER TRADING ON: Blue Arrow par virtual BUY/SELL lagega. Broker ko koi real order nahi jayega.")
         elif run_mode == "BACKTEST":
             bt_days = st.number_input("Backtest Days", min_value=5, max_value=180, value=int(CONFIG["BACKTEST_DAYS"]))
             CONFIG["BACKTEST_DAYS"] = int(bt_days)
@@ -2726,6 +3076,9 @@ def run_streamlit_desktop_app():
             st.download_button("Download Real Trades CSV", df_rep.to_csv(index=False).encode("utf-8"), csv_file, "text/csv")
         else:
             st.warning("Abhi tak koi Real Trade record file nahi bani hai (0 Real Trades).")
+        if (os.path.exists(CONFIG.get("PAPER_STATE_JSON", "paper_open_positions.json"))
+                or os.path.exists(CONFIG.get("PAPER_TRADES_CSV", "paper_trades_journal.csv"))):
+            paper_panel_streamlit(None, key_prefix="rep")
         return
 
     creds_ok = (
@@ -2834,6 +3187,11 @@ def run_streamlit_desktop_app():
         if engine.trade_journal:
             st.subheader("Session Trade Journal")
             st.dataframe(pd.DataFrame(engine.trade_journal), use_container_width=True)
+
+        if (CONFIG.get("PAPER_TRADING", False)
+                or os.path.exists(CONFIG.get("PAPER_STATE_JSON", "paper_open_positions.json"))
+                or os.path.exists(CONFIG.get("PAPER_TRADES_CSV", "paper_trades_journal.csv"))):
+            paper_panel_streamlit(connector, key_prefix="live")
 
         if auto_live:
             time.sleep(30)
