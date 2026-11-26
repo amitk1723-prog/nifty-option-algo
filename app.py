@@ -3342,6 +3342,110 @@ def run_backtest(broker: BrokerConnector, days: int = 30):
 # ==============================================================================
 # 7. STREAMLIT DESKTOP WEB UI (FULL CONTROLS FOR EVERY PARAMETER & GATE)
 # ==============================================================================
+# ==============================================================================
+# 7B. ALL SETTINGS PANEL (TradingView ke "Settings > Inputs" jaisa) + SAVE / LOAD
+# ==============================================================================
+_POS_CHOICES = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right",
+                "Bottom Left", "Bottom Center", "Bottom Right"]
+# Jin settings ka sidebar me widget nahi tha (auto-detect fail ho to ye list use hoti hai)
+_KNOWN_HIDDEN_PARAMS = ["chartType", "optStep", "optSym", "optEntry", "lateAdx", "lateBr", "arN", "cdPos", "lvlBuf",
+                        "rdStep", "rdPts", "vxLook", "tmS1", "tmS2", "tmS3", "beR", "beLock", "gdA", "gdB",
+                        "ovBull", "ovBear", "preSec", "implRef"]
+_KNOWN_HIDDEN_DASH = ["showMk", "lblMode", "lblBars", "wfArrow", "wfMaShow", "posSig", "posLg", "posBr", "posOi",
+                      "posLs", "scPos", "scPosA", "posJ", "posPh", "posXs", "gdPos", "vp_pos", "jPg", "vp_useSpot",
+                      "ph1S", "ph2S", "phE"]
+
+
+def _hidden_setting_keys():
+    """(params_keys, dash_keys) jinka sidebar me koi widget nahi hai."""
+    try:
+        full = open(__file__, encoding="utf-8").read()
+        start = full.rindex("def run_streamlit_desktop_app():")  # asli def (ye helper uske pehle hai)
+        a = full.index("with st.sidebar:", start)
+        b = full.index("Data Connection Test", a)
+        ui = full[a:b]
+        hp = [k for k in PARAMS if f'PARAMS["{k}"]' not in ui]
+        hd = [k for k in DASH if f'DASH["{k}"]' not in ui]
+        return hp, hd
+    except Exception:
+        return ([k for k in _KNOWN_HIDDEN_PARAMS if k in PARAMS], [k for k in _KNOWN_HIDDEN_DASH if k in DASH])
+
+
+def _setting_widget(st, store: dict, k: str, key_prefix: str):
+    v = store[k]
+    wk = f"{key_prefix}_{k}"
+    if isinstance(v, bool):
+        store[k] = st.checkbox(k, value=v, key=wk)
+    elif isinstance(v, int):
+        store[k] = int(st.number_input(k, value=int(v), step=1, key=wk))
+    elif isinstance(v, float):
+        store[k] = float(st.number_input(k, value=float(v), key=wk))
+    elif isinstance(v, (tuple, list)) and len(v) == 2:
+        c1, c2 = st.columns(2)
+        a = c1.text_input(f"{k} (from HH:MM)", value=str(v[0]), key=wk + "_a")
+        b = c2.text_input(f"{k} (to HH:MM)", value=str(v[1]), key=wk + "_b")
+        store[k] = (a.strip(), b.strip())
+    elif k.lower().startswith("pos") or k.lower().endswith("pos") or k.lower().endswith("posa"):
+        opts = _POS_CHOICES if v in _POS_CHOICES else [v] + _POS_CHOICES
+        store[k] = st.selectbox(k, opts, index=opts.index(v), key=wk)
+    else:
+        store[k] = st.text_input(k, value=str(v), key=wk)
+
+
+def apply_settings_dict(d: dict):
+    """Saved settings JSON ko PARAMS / DASH me wapas lagata hai (type bachakar)."""
+    n = 0
+    for grp, tgt in (("PARAMS", PARAMS), ("DASH", DASH)):
+        for k, v in (d.get(grp) or {}).items():
+            if k not in tgt:
+                continue
+            old = tgt[k]
+            try:
+                if isinstance(old, bool):
+                    v = bool(v)
+                elif isinstance(old, int):
+                    v = int(v)
+                elif isinstance(old, float):
+                    v = float(v)
+                elif isinstance(old, tuple) and isinstance(v, (list, tuple)):
+                    v = tuple(v)
+            except Exception:
+                continue
+            tgt[k] = v
+            n += 1
+    return n
+
+
+def render_all_settings_panel(st):
+    """Sidebar ke end me: (1) jo settings pehle dikhti hi nahi thi, (2) saari settings ek jagah, (3) save / load."""
+    hp, hd = _hidden_setting_keys()
+    st.header("13. Baaki Saari Settings (TradingView jaisa)")
+    st.caption(f"Ye {len(hp)} indicator settings aur {len(hd)} dashboard settings upar ke sections me nahi thi. "
+               "Ab yahan se badal sakte ho.")
+    with st.expander(f"13A. Extra Indicator Settings ({len(hp)})"):
+        for k in hp:
+            _setting_widget(st, PARAMS, k, "xp")
+    with st.expander(f"13B. Extra Dashboard / Table Position Settings ({len(hd)})"):
+        for k in hd:
+            _setting_widget(st, DASH, k, "xd")
+    with st.expander(f"13C. Saari Settings Ek Nazar Me ({len(PARAMS)} + {len(DASH)})"):
+        rows = [{"Group": "Indicator", "Setting": k, "Value": str(v)} for k, v in PARAMS.items()]
+        rows += [{"Group": "Dashboard", "Setting": k, "Value": str(v)} for k, v in DASH.items()]
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    with st.expander("13D. Settings Save / Load (JSON)"):
+        st.download_button("Download Current Settings (JSON)",
+                           json.dumps({"PARAMS": PARAMS, "DASH": DASH}, indent=1, default=str).encode("utf-8"),
+                           "nifty_option_settings.json", "application/json", key="dl_settings_json")
+        up = st.file_uploader("Saved Settings JSON Upload Karein", type=["json"], key="up_settings_json")
+        if up is not None and st.button("Upload Ki Hui Settings Lagao", key="apply_settings_json"):
+            try:
+                n_set = apply_settings_dict(json.loads(up.getvalue().decode("utf-8")))
+                st.success(f"{n_set} settings lag gayi. Page refresh ho raha hai...")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Settings file padhne me error: {e}")
+
+
 def run_streamlit_desktop_app():
     import streamlit as st
     import streamlit.components.v1 as components
@@ -3537,6 +3641,8 @@ def run_streamlit_desktop_app():
         DASH["xsShow"] = st.checkbox("Show Extra Stats Table", value=DASH["xsShow"])
         DASH["gdShow"] = st.checkbox("Show Setup Grade Table", value=DASH["gdShow"])
         DASH["vp_showTbl"] = st.checkbox("Show VOL PCR Table", value=DASH["vp_showTbl"])
+
+        render_all_settings_panel(st)
 
     now_ist = dt.datetime.now(IST)
     st.info(
