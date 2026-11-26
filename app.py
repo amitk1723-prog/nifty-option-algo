@@ -3416,6 +3416,41 @@ def apply_settings_dict(d: dict):
     return n
 
 
+# ---- Persistent SAVE (ek click me settings file me save, agli baar app khulne par apne aap load) ----
+SETTINGS_SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nifty_option_saved_settings.json")
+# Sirf safe sidebar settings (API token/ID aur AUTO_PLACE_ORDER jaan-bujhkar save nahi hote)
+_SAVE_CONFIG_KEYS = ["BROKER", "CHART_SYMBOL", "PAPER_TRADING", "PAPER_CAPITAL", "PAPER_BROKERAGE_PER_ORDER",
+                     "PAPER_SLIPPAGE_PTS", "BACKTEST_DAYS", "BACKTEST_ENTRY_TYPE"]
+
+
+def save_current_settings():
+    data = {"PARAMS": PARAMS, "DASH": DASH, "CONFIG": {k: CONFIG[k] for k in _SAVE_CONFIG_KEYS if k in CONFIG}}
+    with open(SETTINGS_SAVE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1, default=str)
+    return len(PARAMS) + len(DASH) + len(data["CONFIG"])
+
+
+def load_saved_settings():
+    """Saved file ho to PARAMS / DASH / CONFIG me lagata hai (file na ho to kuchh nahi badalta)."""
+    if not os.path.exists(SETTINGS_SAVE_FILE):
+        return 0
+    try:
+        with open(SETTINGS_SAVE_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        n = apply_settings_dict(d)
+        for k, v in (d.get("CONFIG") or {}).items():
+            if k in _SAVE_CONFIG_KEYS and k in CONFIG:
+                try:
+                    old = CONFIG[k]
+                    CONFIG[k] = bool(v) if isinstance(old, bool) else int(v) if isinstance(old, int) else float(v) if isinstance(old, float) else v
+                    n += 1
+                except Exception:
+                    pass
+        return n
+    except Exception:
+        return 0
+
+
 def render_all_settings_panel(st):
     """Sidebar ke end me: (1) jo settings pehle dikhti hi nahi thi, (2) saari settings ek jagah, (3) save / load."""
     hp, hd = _hidden_setting_keys()
@@ -3458,7 +3493,10 @@ def run_streamlit_desktop_app():
 
     st.title("NIFTY OPTION SIGNAL PRO v28 - Full Desktop Trading & Backtest Dashboard")
 
+    load_saved_settings()  # pehle save ki hui settings (agar hain) wapas lagao
+
     with st.sidebar:
+        save_slot = st.empty()  # Save button yahin (sabse upar) dikhega, kaam sidebar ke end me hota hai
         st.header("1. Broker & API Credentials")
         broker_choice = st.selectbox("Select Broker", ["DHAN", "UPSTOX"], index=0 if CONFIG["BROKER"] == "DHAN" else 1)
         CONFIG["BROKER"] = broker_choice
@@ -3643,6 +3681,18 @@ def run_streamlit_desktop_app():
         DASH["vp_showTbl"] = st.checkbox("Show VOL PCR Table", value=DASH["vp_showTbl"])
 
         render_all_settings_panel(st)
+
+        with save_slot.container():
+            if st.button("ðŸ’¾ Save Settings", key="save_all_settings_btn", use_container_width=True):
+                try:
+                    n_saved = save_current_settings()
+                    st.success(f"{n_saved} settings save ho gayi. Agli baar app khologe to yahi settings milengi.")
+                except Exception as e:
+                    st.error(f"Settings save nahi hui: {e}")
+            elif os.path.exists(SETTINGS_SAVE_FILE):
+                st.caption("Saved settings load hain. Kuchh badalo to upar Save dabao.")
+            else:
+                st.caption("Setting badalne ke baad Save dabao.")
 
     now_ist = dt.datetime.now(IST)
     st.info(
