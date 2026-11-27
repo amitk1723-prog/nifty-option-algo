@@ -3496,6 +3496,13 @@ def run_streamlit_desktop_app():
     load_saved_settings()  # pehle save ki hui settings (agar hain) wapas lagao
 
     with st.sidebar:
+        # ---- Page navigation: Home + Scanner (dono ek hi app me) ----
+        try:
+            st.page_link("app.py", label="Home (Dashboard)", icon="ðŸ ")
+            st.page_link("pages/1_Scanner.py", label="Scanner", icon="ðŸ”")
+            st.divider()
+        except Exception:
+            pass
         save_slot = st.empty()  # Save button yahin (sabse upar) dikhega, kaam sidebar ke end me hota hai
         st.header("1. Broker & API Credentials")
         broker_choice = st.selectbox("Select Broker", ["DHAN", "UPSTOX"], index=0 if CONFIG["BROKER"] == "DHAN" else 1)
@@ -3683,7 +3690,7 @@ def run_streamlit_desktop_app():
         render_all_settings_panel(st)
 
         with save_slot.container():
-            if st.button("Ã°Å¸â€™Â¾ Save Settings", key="save_all_settings_btn", use_container_width=True):
+            if st.button("ðŸ’¾ Save Settings", key="save_all_settings_btn", use_container_width=True):
                 try:
                     n_saved = save_current_settings()
                     st.success(f"{n_saved} settings save ho gayi. Agli baar app khologe to yahi settings milengi.")
@@ -3824,7 +3831,7 @@ def run_streamlit_desktop_app():
             st.download_button("Download Live dashboard.html", dash_html, "dashboard.html", "text/html", key="dl_live_html")
             components.html(dash_html, height=820, scrolling=True)
         else:
-            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein Ã¢â‚¬â€ chart aur saari 12 tables yahan load ho jayengi.")
+            st.info("Upar 'Fetch & Evaluate Live Bar Now' button dabayein â€” chart aur saari 12 tables yahan load ho jayengi.")
 
         if engine.trade_journal:
             st.subheader("Session Trade Journal")
