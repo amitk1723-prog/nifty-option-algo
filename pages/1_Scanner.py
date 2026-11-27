@@ -55,8 +55,8 @@ SECTORS = {
 SECTOR_OF = {s: sec for sec, syms in SECTORS.items() for s in syms}  # ek symbol = ek sector
 
 # Sector -> asli NSE index (alag-alag naam ke options; jo scrip master me pehle mile wahi use hoga).
-# Jin sectors ka koi sahi NSE index nahi (POWER, CAP GOODS, CEMENT, INFRA, TELECOM) unhe jaan-bujhkar khali rakha hai,
-# taki galat index ka % na dikhe. Chaho to yahan apna index jod sakte ho.
+# Jin sectors ka exact NSE index nahi hai unka sabse nazdeeki index lagaya hai (APPROX me likha, "~Index" dikhega).
+# CEMENT ka koi index nahi, wo khali rahega. Chaho to yahan apna index jod sakte ho.
 INDEX_ALIASES = {
     "BANK": ["NIFTY BANK", "BANKNIFTY"],
     "IT": ["NIFTY IT", "NIFTYIT"],
@@ -70,7 +70,12 @@ INDEX_ALIASES = {
     "OIL & GAS": ["NIFTY OIL AND GAS", "NIFTY OIL & GAS"],
     "CHEMICALS": ["NIFTY CHEMICALS", "NIFTY CHEMICALS INDEX"],
     "CONSUMER": ["NIFTY INDIA CONSUMPTION", "NIFTY CONSUMPTION"],  # approx (Titan, Trent, DMart, paints...)
+    "POWER": ["NIFTY ENERGY"],  # approx
+    "INFRA & LOGISTICS": ["NIFTY INFRASTRUCTURE"],  # approx
+    "CAP GOODS": ["NIFTY INDIA MANUFACTURING"],  # approx
+    "TELECOM & MEDIA": ["NIFTY MEDIA"],  # approx
 }
+APPROX = {"CONSUMER", "POWER", "INFRA & LOGISTICS", "CAP GOODS", "TELECOM & MEDIA"}
 DIV_MIN = 0.10  # dono % itne se zyada hon aur sign ulta ho tabhi Divergence badge
 
 
@@ -108,37 +113,79 @@ def get_quotes(dhan, eq_ids, fut_ids):
     return d["data"] if "data" in d else d
 
 
-def index_pct(conn, dhan, pct_fn):
-    """Sector index ka asli % change (NSE index quote se).
-    Return: (pct_by_sector, index_name_by_sector, error_text).
-    Naam scrip master ke kai columns me dhoondhta hai (trading symbol / symbol name / custom symbol)."""
+@st.cache_data(ttl=45, show_spinner=False)
+def nse_index_pct():
+    """NSE ki public allIndices API se saare indices ka % (fallback). Return: ({NORMNAME: (pct, name)}, error)."""
     try:
-        df = conn.inst["_DF"]
-        ix = df[df["SEM_INSTRUMENT_NAME"] == "INDEX"]
-        name_cols = [c for c in ("SEM_TRADING_SYMBOL", "SM_SYMBOL_NAME", "SEM_CUSTOM_SYMBOL") if c in ix.columns]
-        by_name = {}
-        for _, row in ix.iterrows():
-            sid = int(row["SEM_SMST_SECURITY_ID"])
-            for c in name_cols:
-                by_name.setdefault(_norm(row[c]), (sid, str(row[c])))
-        ids, names = {}, {}
-        for sec_name, aliases in INDEX_ALIASES.items():
-            for a in aliases:
-                hit = by_name.get(_norm(a))
-                if hit:
-                    ids[sec_name], names[sec_name] = hit[0], hit[1]
-                    break
-        if not ids:
-            return {}, {}, "scrip master me koi sector index nahi mila"
-        r = dhan.quote_data({"IDX_I": list(ids.values())})
-        if not isinstance(r, dict) or r.get("status") != "success":
-            return {}, names, f"index quote fail: {str(r)[:200]}"
-        d = r.get("data", {})
-        d = (d["data"] if "data" in d else d).get("IDX_I", {})
-        out = {sec_name: pct_fn(d[str(i)]) for sec_name, i in ids.items() if str(i) in d}
-        return out, names, ""
+        import requests
+        h = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/120.0 Safari/537.36",
+             "Accept": "application/json,text/plain,*/*", "Accept-Language": "en-US,en;q=0.9"}
+        s = requests.Session()
+        s.get("https://www.nseindia.com", headers=h, timeout=8)
+        r = s.get("https://www.nseindia.com/api/allIndices", headers=h, timeout=8)
+        r.raise_for_status()
+        out = {}
+        for d in r.json().get("data", []):
+            nm, pc = d.get("index") or d.get("indexSymbol"), d.get("percentChange")
+            if nm is not None and pc is not None:
+                out[_norm(nm)] = (float(pc), str(nm))
+        return (out, "") if out else ({}, "NSE API se khali data aaya")
     except Exception as e:
-        return {}, {}, f"index error: {e}"
+        return {}, f"NSE API error: {e}"
+
+
+def index_pct(conn, dhan, pct_fn, use_dhan=True):
+    """Sector index ka asli % change. Pehle Dhan index quote, jo sector na mile unke liye NSE allIndices.
+    Return: (pct_by_sector, index_name_by_sector, debug_dict)."""
+    res, lab = {}, {}
+    dbg = {"dhan_err": "", "nse_err": "", "src": {}, "index_rows": 0, "sample": []}
+    if use_dhan:
+        try:
+            df = conn.inst["_DF"]
+            ix = df[df["SEM_INSTRUMENT_NAME"] == "INDEX"]
+            dbg["index_rows"] = len(ix)
+            name_cols = [c for c in ("SEM_TRADING_SYMBOL", "SM_SYMBOL_NAME", "SEM_CUSTOM_SYMBOL") if c in ix.columns]
+            by_name = {}
+            for _, row in ix.iterrows():
+                sid = int(row["SEM_SMST_SECURITY_ID"])
+                for c in name_cols:
+                    by_name.setdefault(_norm(row[c]), (sid, str(row[c])))
+            dbg["sample"] = [v[1] for v in list(by_name.values())[:80]]
+            ids, names = {}, {}
+            for sec_name, aliases in INDEX_ALIASES.items():
+                for a in aliases:
+                    hit = by_name.get(_norm(a))
+                    if hit:
+                        ids[sec_name], names[sec_name] = hit[0], hit[1]
+                        break
+            if not ids:
+                dbg["dhan_err"] = "scrip master me sector index nahi mile"
+            else:
+                r = dhan.quote_data({"IDX_I": list(ids.values())})
+                if not isinstance(r, dict) or r.get("status") != "success":
+                    dbg["dhan_err"] = f"index quote fail: {str(r)[:200]}"
+                else:
+                    d = r.get("data", {})
+                    d = (d["data"] if "data" in d else d).get("IDX_I", {})
+                    got = {s_: pct_fn(d[str(i)]) for s_, i in ids.items() if str(i) in d}
+                    if got and all(abs(v) < 1e-9 for v in got.values()):
+                        dbg["dhan_err"] = "Dhan index quote me sab 0 aaya (ignore kiya)"
+                    else:
+                        for s_, v in got.items():
+                            res[s_], lab[s_], dbg["src"][s_] = v, names[s_], "Dhan"
+        except Exception as e:
+            dbg["dhan_err"] = f"Dhan index error: {e}"
+    missing = [s_ for s_ in INDEX_ALIASES if s_ not in res]
+    if missing:
+        nse, dbg["nse_err"] = nse_index_pct()
+        for s_ in missing:
+            for a in INDEX_ALIASES[s_]:
+                hit = nse.get(_norm(a))
+                if hit:
+                    res[s_], lab[s_], dbg["src"][s_] = hit[0], hit[1], "NSE"
+                    break
+    return res, lab, dbg
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -346,10 +393,7 @@ try:
     sec = (u.groupby("Sector").agg(Avg_Chg=("%Chg", "mean"), Breadth=("%Chg", lambda s: (s > 0).mean() * 100),
                                    Stocks=("Symbol", "count")).sort_values("Avg_Chg", ascending=False).round(2))
     # Sector index ka asli % (full free-float market-cap weight) - stocks ke simple average se alag hota hai
-    if data_src == "quote":
-        ip, ip_names, ip_err = index_pct(conn, dhan, pct)
-    else:
-        ip, ip_names, ip_err = {}, {}, "quote data nahi aaya (daily fallback), isliye Index % skip"
+    ip, ip_names, ip_dbg = index_pct(conn, dhan, pct, use_dhan=(data_src == "quote"))
     sec["Index"] = [ip_names.get(s_, "") for s_ in sec.index]
     sec["Index %"] = [round(ip[s_], 2) if s_ in ip else float("nan") for s_ in sec.index]
     sec["Diff (Avg-Index)"] = (sec["Avg_Chg"] - sec["Index %"]).round(2)
@@ -415,10 +459,13 @@ try:
 
     # Index % kis sector ka nahi aaya (taki chupke se gayab na ho)
     no_idx = [s_ for s_ in sec.index if s_ in INDEX_ALIASES and s_ not in ip]
-    if ip_err or no_idx:
-        st.caption("Index % issue: " + (ip_err + ". " if ip_err else "")
-                   + (f"In sectors ka index quote nahi mila: {', '.join(no_idx)}. " if no_idx else "")
-                   + "Sectors tab me 'Index' column dekho.")
+    if no_idx:
+        st.caption(f"Index % nahi mila: {', '.join(no_idx)}. Neeche 'Index debug' kholo.")
+    with st.expander("Index debug (Index % na aaye to ye dekho)"):
+        st.write({"Dhan scrip master me INDEX rows": ip_dbg["index_rows"], "Dhan error": ip_dbg["dhan_err"] or "-",
+                  "NSE error": ip_dbg["nse_err"] or "-", "Source per sector": ip_dbg["src"]})
+        if ip_dbg["sample"]:
+            st.caption("Scrip master ke index naam (pehle 80): " + ", ".join(ip_dbg["sample"]))
 
     # ---------- Market Breadth: Advance / Decline ----------
     total = len(u)
@@ -464,9 +511,10 @@ try:
                 idx_txt, div_txt = "", ""
             else:
                 idx_col = "#15803d" if idx_v > 0 else ("#b91c1c" if idx_v < 0 else "#555")
-                idx_txt = (f' <span style="color:#666;font-size:12px;">| Index</span> '
+                apx = s_name in APPROX
+                idx_txt = (f' <span style="color:#666;font-size:12px;">| {"~Index" if apx else "Index"}</span> '
                            f'<span style="color:{idx_col};font-weight:600;">{idx_v:+.2f}%</span>')
-                is_div = avg * idx_v < 0 and abs(avg) >= DIV_MIN and abs(idx_v) >= DIV_MIN
+                is_div = (not apx) and avg * idx_v < 0 and abs(avg) >= DIV_MIN and abs(idx_v) >= DIV_MIN
                 div_txt = (' <span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;'
                            'padding:1px 6px;border-radius:8px;">\u26a0 Divergence</span>') if is_div else ""
             g_bar = f'<div style="width:{g_n / tot_n * 100:.1f}%;background:#16a34a;color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:22px;">{g_n if g_n else ""}</div>'
@@ -481,7 +529,7 @@ try:
   <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:#e5e7eb;">{g_bar}{f_bar}{r_bar}</div>
 </div>""")
         st.markdown("#### Sector-wise Advance / Decline")
-        st.caption("Scanner = tumhare F&O stocks ka simple average | Index = asli NSE sector index (full weightage)")
+        st.caption("Scanner = tumhare F&O stocks ka simple average | Index = asli NSE sector index (full weightage) | ~Index = nazdeeki index (approx)")
         st.markdown("".join(ln.strip() for ln in "".join(rows_html).splitlines()), unsafe_allow_html=True)
     except Exception as ce:
         st.caption(f"Sector chart error: {ce}")
