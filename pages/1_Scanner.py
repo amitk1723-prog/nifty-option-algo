@@ -143,7 +143,7 @@ with st.sidebar:
 # Scan button + Auto refresh main page par (mobile me sidebar kholne ki zarurat nahi)
 bc1, bc2 = st.columns([1, 1])
 with bc1:
-    go = st.button("🔄 Scan now", use_container_width=True, type="primary")
+    go = st.button("\U0001f504 Scan now", use_container_width=True, type="primary")
 with bc2:
     auto = st.toggle("Auto refresh", value=False, key="scan_auto") if hasattr(st, "toggle") \
         else st.checkbox("Auto refresh", value=False, key="scan_auto")
@@ -192,4 +192,115 @@ try:
             if r.Symbol in base[1] and pd.notna(r.OI) and base[1][r.Symbol][0]:
                 o0, p0 = base[1][r.Symbol]
                 oc, pc_ = (r.OI - o0) / o0 * 100, (r.LTP - p0) / p0 * 100
-                if abs(oc)
+                if abs(oc) >= oi_thr:
+                    oi_rows.append({"Symbol": r.Symbol, "Sector": r.Sector, "OI %": round(oc, 2),
+                                    "Price % (same window)": round(pc_, 2), "Type": oi_class(pc_, oc)})
+    oi_df = pd.DataFrame(oi_rows).sort_values("OI %", key=abs, ascending=False) if oi_rows else pd.DataFrame()
+
+    # signals
+    cands = []
+    for side, secs in (("BUY", top), ("SELL", bot)):
+        d = u[u["Sector"].isin(secs)]
+        d = d[d["%Chg"] > 0] if side == "BUY" else d[d["%Chg"] < 0]
+        for r in d.reindex(d["%Chg"].abs().sort_values(ascending=False).index).head(max_n).itertuples():
+            cands.append((side, r))
+    sigs, prog = [], st.progress(0.0, text="Signals check ho rahe hain...")
+    for i, (side, r) in enumerate(cands):
+        try:
+            s = check_signal(get_candles_5m(dhan, r.eq), side, lookback, vol_ratio)
+        except Exception:
+            s = None
+        if s:
+            oi_t = ""
+            if not oi_df.empty and r.Symbol in set(oi_df["Symbol"]):
+                oi_t = oi_df[oi_df["Symbol"] == r.Symbol].iloc[0]["Type"]
+            sigs.append({"Symbol": r.Symbol, "Sector": r.Sector, **s, "OI": oi_t})
+        prog.progress((i + 1) / max(len(cands), 1))
+        time.sleep(0.3)  # Dhan data API rate limit
+    prog.empty()
+
+    st.caption(f"Last scan: {now.strftime('%H:%M:%S')} | Top: {', '.join(top)} | Bottom: {', '.join(bot)}")
+
+    # ---------- Market Breadth: Advance / Decline ----------
+    total = len(u)
+    green = int((u["%Chg"] > 0).sum())
+    red = int((u["%Chg"] < 0).sum())
+    flat = total - green - red
+    gp = (green / total * 100) if total else 0
+    rp = (red / total * 100) if total else 0
+    st.markdown(
+        f"""
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px 0;">
+  <div style="flex:1;min-width:55px;background:#f3f4f6;border-radius:10px;padding:8px 4px;text-align:center;">
+    <div style="font-size:13px;color:#555;">A/D Ratio</div><div style="font-size:24px;font-weight:700;color:#111;">{(green / red if red else float(green)):.2f}</div><div style="font-size:12px;color:#555;">Total {total}</div></div>
+  <div style="flex:1;min-width:55px;background:#dcfce7;border-radius:10px;padding:8px 4px;text-align:center;">
+    <div style="font-size:13px;color:#166534;">\u25b2 Advance</div><div style="font-size:24px;font-weight:700;color:#15803d;">{green}</div>
+    <div style="font-size:12px;color:#166534;">{gp:.0f}%</div></div>
+  <div style="flex:1;min-width:55px;background:#fee2e2;border-radius:10px;padding:8px 4px;text-align:center;">
+    <div style="font-size:13px;color:#991b1b;">\u25bc Decline</div><div style="font-size:24px;font-weight:700;color:#b91c1c;">{red}</div>
+    <div style="font-size:12px;color:#991b1b;">{rp:.0f}%</div></div>
+  <div style="flex:1;min-width:55px;background:#f3f4f6;border-radius:10px;padding:8px 4px;text-align:center;">
+    <div style="font-size:13px;color:#555;">Unchanged</div><div style="font-size:24px;font-weight:700;color:#444;">{flat}</div></div>
+</div>
+<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:14px;background:#e5e7eb;">
+  <div style="width:{gp:.1f}%;background:#16a34a;"></div><div style="width:{rp:.1f}%;margin-left:auto;background:#dc2626;"></div>
+</div>
+""".replace("\n  ", "\n").replace("\n    ", "\n"),
+        unsafe_allow_html=True,
+    )
+
+    # ---------- Sector-wise Green/Red COUNT bar (ek sector = ek line) ----------
+    try:
+        rows_html = []
+        for s_name in sec.index:  # strongest sector sabse upar
+            d_s = u[u["Sector"] == s_name]
+            g_n = int((d_s["%Chg"] > 0).sum())
+            r_n = int((d_s["%Chg"] < 0).sum())
+            f_n = len(d_s) - g_n - r_n
+            tot_n = max(len(d_s), 1)
+            avg = sec.loc[s_name, "Avg_Chg"]
+            avg_col = "#15803d" if avg > 0 else ("#b91c1c" if avg < 0 else "#555")
+            g_bar = f'<div style="width:{g_n / tot_n * 100:.1f}%;background:#16a34a;color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:22px;">{g_n if g_n else ""}</div>'
+            f_bar = f'<div style="width:{f_n / tot_n * 100:.1f}%;background:#9ca3af;"></div>'
+            r_bar = f'<div style="width:{r_n / tot_n * 100:.1f}%;background:#dc2626;color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:22px;">{r_n if r_n else ""}</div>'
+            rows_html.append(f"""
+<div style="margin:0 0 10px 0;">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:14px;margin-bottom:3px;">
+    <span><b>{s_name}</b> <span style="color:{avg_col};font-weight:600;">{avg:+.2f}%</span></span>
+    <span style="font-size:13px;"><span style="color:#15803d;font-weight:700;">Adv {g_n}</span> &nbsp; <span style="color:#b91c1c;font-weight:700;">Dec {r_n}</span> &nbsp; <span style="color:#888;">/ {len(d_s)}</span></span>
+  </div>
+  <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:#e5e7eb;">{g_bar}{f_bar}{r_bar}</div>
+</div>""")
+        st.markdown("#### Sector-wise Advance / Decline")
+        st.markdown("".join(ln.strip() for ln in "".join(rows_html).splitlines()), unsafe_allow_html=True)
+    except Exception as ce:
+        st.caption(f"Sector chart error: {ce}")
+    t1, t2, t3, t4 = st.tabs(["Signals", "Sectors", "OI Spurts", "Stocks"])
+    with t1:
+        if sigs:
+            st.dataframe(pd.DataFrame(sigs), use_container_width=True)
+        else:
+            st.info("Abhi koi signal nahi.")
+    with t2:
+        st.dataframe(sec, use_container_width=True)
+    with t3:
+        if base is None:
+            st.info("Pehla snapshot save hua. Kuch minute baad dobara scan karo.")
+        elif oi_df.empty:
+            st.info(f"Pichle ~{int((now - base[0]).total_seconds() / 60)} min me {oi_thr}% se zyada OI change nahi.")
+        else:
+            st.dataframe(oi_df, use_container_width=True)
+    with t4:
+        st.dataframe(u[["Sector", "Symbol", "LTP", "%Chg", "Volume", "OI"]].sort_values("%Chg", ascending=False),
+                     use_container_width=True)
+except Exception as e:
+    st.error(f"Scanner error: {e}")
+
+if auto:
+    # 1-1 second ka countdown: is beech koi button/toggle dabao to turant response milega
+    cd = st.empty()
+    for left in range(int(gap), 0, -1):
+        cd.caption(f"Agla auto scan {left} sec me... (band karne ke liye Auto refresh OFF karein)")
+        time.sleep(1)
+    cd.empty()
+    st.rerun()
