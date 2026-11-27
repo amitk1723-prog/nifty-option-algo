@@ -1,12 +1,15 @@
 # pages/1_Scanner.py
 # Sector strength + OI Spurts + Pullback signals. Main app ka connected Dhan session use karta hai.
+# v2: market band me last trading day ka data + Signal Log (time ke saath, poore din ki list)
 import time
+import json
 import datetime as dt
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Sector + OI + Signal Scanner", layout="wide")
 IST = "Asia/Kolkata"
+SIG_FILE = "signal_log.json"  # best-effort save (app restart par bhi list bachne ki koshish)
 
 # Sector -> F&O stocks (edit kar sakte ho; master me na mile to skip ho jata hai)
 SECTORS = {
@@ -24,6 +27,11 @@ SECTORS = {
 
 
 # ---------------- helpers ----------------
+def market_is_open(now):
+    """now = naive IST datetime. NSE: Mon-Fri 9:15 - 15:30."""
+    return now.weekday() < 5 and dt.time(9, 15) <= now.time() <= dt.time(15, 30)
+
+
 def build_universe(conn):
     """Main app ki already-loaded scrip master se F&O stocks ke IDs nikalta hai."""
     df = conn.inst["_DF"]
@@ -47,6 +55,23 @@ def get_quotes(dhan, eq_ids, fut_ids):
     return d["data"] if "data" in d else d
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def daily_change_pct(_dhan, secid, day_key):
+    """Fallback: daily candles se last close vs pichla close. day_key = aaj ki date (cache roz refresh)."""
+    try:
+        to = dt.date.today() + dt.timedelta(days=1)
+        fr = to - dt.timedelta(days=12)
+        res = _dhan.historical_daily_data(
+            security_id=str(secid), exchange_segment="NSE_EQ", instrument_type="EQUITY",
+            from_date=fr.strftime("%Y-%m-%d"), to_date=to.strftime("%Y-%m-%d"))
+        c = (res.get("data") or {}).get("close") if isinstance(res, dict) else None
+        if c and len(c) >= 2 and c[-2]:
+            return (c[-1] - c[-2]) / c[-2] * 100
+    except Exception:
+        pass
+    return 0.0
+
+
 def get_candles_5m(dhan, secid, days=6):
     """Main app jaisa hi Dhan intraday call (keyword style) + same timestamp fix."""
     to = dt.datetime.now()
@@ -66,7 +91,7 @@ def get_candles_5m(dhan, secid, days=6):
     df.index = pd.to_datetime(ts.values, unit="s", utc=True).tz_convert(IST)
     df = df[~df.index.duplicated(keep="last")].sort_index()
     if len(df) and df.index[-1] + pd.Timedelta(minutes=5) > pd.Timestamp.now(tz=IST):
-        df = df.iloc[:-1]  # forming candle hata do
+        df = df.iloc[:-1]  # forming candle hata do (market band me last candle rehti hai)
     return df
 
 
@@ -103,12 +128,44 @@ def check_signal(df, side, lookback, vol_ratio):
         return None
     return {"Signal": side, "Close": round(last["close"], 2), "SL": round(sl, 2), "Target 1:2": round(tgt, 2),
             "PullbackVol/Avg": round(wv, 2), "VWAP": round(vwap.iloc[-1], 2), "Level": lvl,
-            "Candle": last.name.strftime("%H:%M")}
+            "Date": last.name.strftime("%d-%b"), "Candle": last.name.strftime("%H:%M")}
 
 
 @st.cache_resource
 def oi_store():
     return {"snaps": []}  # sab sessions me shared OI snapshots
+
+
+@st.cache_resource
+def sig_store():
+    """Poore din ka Signal Log (sab sessions me shared). File se bhi load karta hai."""
+    log = []
+    try:
+        with open(SIG_FILE, "r", encoding="utf-8") as f:
+            log = json.load(f)
+    except Exception:
+        pass
+    return {"log": log if isinstance(log, list) else []}
+
+
+def add_signals(store, sigs, now):
+    """Naye signals log me jodta hai (same Date+Symbol+Side+Candle dobara nahi). Return: naye signals ki ginti."""
+    keys = {(x.get("Date"), x.get("Symbol"), x.get("Signal"), x.get("Candle")) for x in store["log"]}
+    new = 0
+    for s in sigs:
+        k = (s["Date"], s["Symbol"], s["Signal"], s["Candle"])
+        if k not in keys:
+            store["log"].append({"Found At": now.strftime("%d-%b %H:%M:%S"), **s})
+            keys.add(k)
+            new += 1
+    store["log"] = store["log"][-1000:]
+    if new:
+        try:
+            with open(SIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(store["log"], f)
+        except Exception:
+            pass
+    return new
 
 
 def oi_class(pchg, oichg):
@@ -163,9 +220,18 @@ try:
     q = get_quotes(dhan, u["eq"].tolist(), u["fut"].dropna().astype(int).tolist())
     qe, qf = q.get("NSE_EQ", {}), q.get("NSE_FNO", {})
 
+    now = pd.Timestamp.now(tz=IST).to_pydatetime().replace(tzinfo=None)  # IST time
+    mkt_open = market_is_open(now)
+
     def pct(x):
+        """net_change = LTP - pichla close. Live aur market band, dono me sahi (ohlc.close band me aaj ka close ban jata hai)."""
+        ltp = x.get("last_price", 0) or 0
+        nc = x.get("net_change")
+        if nc is not None and ltp:
+            pc = ltp - nc
+            return nc / pc * 100 if pc else 0.0
         pc = (x.get("ohlc") or {}).get("close") or 0
-        return (x.get("last_price", 0) - pc) / pc * 100 if pc else 0.0
+        return (ltp - pc) / pc * 100 if pc else 0.0
 
     u["LTP"] = u["eq"].map(lambda i: qe.get(str(i), {}).get("last_price"))
     u["%Chg"] = u["eq"].map(lambda i: pct(qe.get(str(i), {})))
@@ -173,14 +239,26 @@ try:
     u["OI"] = u["fut"].map(lambda i: qf.get(str(int(i)), {}).get("oi") if pd.notna(i) else None)
     u = u.dropna(subset=["LTP"])
 
+    # Fallback: agar quote se sab 0 aaya (net_change nahi mila) to daily candles se last close vs prev close
+    data_src = "quote"
+    if len(u) and (u["%Chg"].abs() < 1e-9).all():
+        pb = st.progress(0.0, text="Last trading day ka data la rahe hain...")
+        vals = []
+        for i, sid in enumerate(u["eq"].tolist()):
+            vals.append(daily_change_pct(dhan, int(sid), dt.date.today().isoformat()))
+            pb.progress((i + 1) / len(u))
+            time.sleep(0.15)
+        pb.empty()
+        u["%Chg"] = vals
+        data_src = "daily"
+
     sec = (u.groupby("Sector").agg(Avg_Chg=("%Chg", "mean"), Breadth=("%Chg", lambda s: (s > 0).mean() * 100),
                                    Stocks=("Symbol", "count")).sort_values("Avg_Chg", ascending=False).round(2))
     top, bot = list(sec.index[:topk]), list(sec.index[-topk:])
 
-    # OI snapshots
+    # OI snapshots (sirf market chalu ho tab save, warna band market ka bekaar snapshot jud jata hai)
     store = oi_store()
-    now = pd.Timestamp.now(tz=IST).to_pydatetime().replace(tzinfo=None)  # IST time
-    if not store["snaps"] or (now - store["snaps"][-1][0]).total_seconds() >= 60:
+    if mkt_open and (not store["snaps"] or (now - store["snaps"][-1][0]).total_seconds() >= 60):
         store["snaps"].append((now, {r.Symbol: (r.OI, r.LTP) for r in u.itertuples() if pd.notna(r.OI)}))
     store["snaps"] = [x for x in store["snaps"] if (now - x[0]).total_seconds() < 4 * 3600]
     old = [x for x in store["snaps"] if (now - x[0]).total_seconds() >= oi_min * 60]
@@ -219,7 +297,14 @@ try:
         time.sleep(0.3)  # Dhan data API rate limit
     prog.empty()
 
-    st.caption(f"Last scan: {now.strftime('%H:%M:%S')} | Top: {', '.join(top)} | Bottom: {', '.join(bot)}")
+    # Naye signals ko Signal Log me jodo (time ke saath)
+    slog = sig_store()
+    n_new = add_signals(slog, sigs, now)
+
+    status = "\U0001f7e2 LIVE" if mkt_open else "\U0001f4cc Market band - last trading day ka data"
+    st.caption(f"{status} | Last scan: {now.strftime('%H:%M:%S')} | Top: {', '.join(top)} | Bottom: {', '.join(bot)}")
+    if n_new:
+        st.success(f"\U0001f514 {n_new} naya signal mila: " + ", ".join(f"{s['Symbol']} {s['Signal']}" for s in sigs[-n_new:]))
 
     # ---------- Market Breadth: Advance / Decline ----------
     total = len(u)
@@ -275,17 +360,44 @@ try:
         st.markdown("".join(ln.strip() for ln in "".join(rows_html).splitlines()), unsafe_allow_html=True)
     except Exception as ce:
         st.caption(f"Sector chart error: {ce}")
+
     t1, t2, t3, t4 = st.tabs(["Signals", "Sectors", "OI Spurts", "Stocks"])
     with t1:
-        if sigs:
-            st.dataframe(pd.DataFrame(sigs), use_container_width=True)
+        log = slog["log"]
+        if not log:
+            st.info("Abhi tak koi signal nahi mila. Jaise hi milega, time ke saath yahan list me judta jayega.")
         else:
-            st.info("Abhi koi signal nahi.")
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                view = st.radio("Dikhao", ["Sab", "Sirf aaj ke", "Sirf BUY", "Sirf SELL"],
+                                horizontal=True, key="sig_view", label_visibility="collapsed")
+            with c2:
+                if st.button("Log clear karo", key="sig_clear"):
+                    slog["log"].clear()
+                    try:
+                        with open(SIG_FILE, "w", encoding="utf-8") as f:
+                            json.dump([], f)
+                    except Exception:
+                        pass
+                    st.rerun()
+            ldf = pd.DataFrame(log)
+            if view == "Sirf aaj ke":
+                ldf = ldf[ldf["Date"] == now.strftime("%d-%b")]
+            elif view == "Sirf BUY":
+                ldf = ldf[ldf["Signal"] == "BUY"]
+            elif view == "Sirf SELL":
+                ldf = ldf[ldf["Signal"] == "SELL"]
+            cols = [c for c in ["Found At", "Date", "Candle", "Symbol", "Sector", "Signal", "Close", "SL",
+                                "Target 1:2", "PullbackVol/Avg", "VWAP", "Level", "OI"] if c in ldf.columns]
+            ldf = ldf[cols].iloc[::-1]  # naya signal sabse upar
+            st.caption(f"Total {len(ldf)} signals (naya upar). 'Found At' = scanner ne kab pakda, 'Candle' = 5m candle ka time.")
+            st.dataframe(ldf, use_container_width=True, hide_index=True)
     with t2:
         st.dataframe(sec, use_container_width=True)
     with t3:
         if base is None:
-            st.info("Pehla snapshot save hua. Kuch minute baad dobara scan karo.")
+            st.info("Pehla snapshot save hua. Kuch minute baad dobara scan karo." if mkt_open
+                    else "Market band hai. OI Spurts sirf market chalu hone par bante hain.")
         elif oi_df.empty:
             st.info(f"Pichle ~{int((now - base[0]).total_seconds() / 60)} min me {oi_thr}% se zyada OI change nahi.")
         else:
