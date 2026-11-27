@@ -1,6 +1,6 @@
 # pages/1_Scanner.py
 # Sector strength + OI Spurts + Pullback signals. Main app ka connected Dhan session use karta hai.
-# v2: market band me last trading day ka data + Signal Log (time ke saath, poore din ki list)
+# v3: saare F&O stocks (scrip master se) + naye sectors + OTHERS bucket + 218 count check + sector Index %
 import time
 import json
 import datetime as dt
@@ -10,20 +10,49 @@ import streamlit as st
 st.set_page_config(page_title="Sector + OI + Signal Scanner", layout="wide")
 IST = "Asia/Kolkata"
 SIG_FILE = "signal_log.json"  # best-effort save (app restart par bhi list bachne ki koshish)
+EXPECTED_FNO = 218  # F&O stocks ki expected ginti
 
-# Sector -> F&O stocks (edit kar sakte ho; master me na mile to skip ho jata hai)
+# Sector -> F&O stocks (edit kar sakte ho). Jo stock yahan nahi hoga wo "OTHERS" me dikhega.
 SECTORS = {
-    "AUTO": ["MARUTI", "M&M", "TMPV", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "TVSMOTOR", "ASHOKLEY", "BOSCHLTD", "BHARATFORG"],
-    "IT": ["TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "PERSISTENT", "COFORGE", "MPHASIS", "OFSS"],
-    "BANK": ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB", "FEDERALBNK", "IDFCFIRSTB", "AUBANK", "CANBK"],
-    "FIN SERVICES": ["BAJFINANCE", "BAJAJFINSV", "SBILIFE", "HDFCLIFE", "CHOLAFIN", "SHRIRAMFIN", "MUTHOOTFIN", "JIOFIN"],
-    "PHARMA": ["SUNPHARMA", "CIPLA", "DRREDDY", "DIVISLAB", "LUPIN", "AUROPHARMA", "TORNTPHARM", "ZYDUSLIFE", "ALKEM"],
-    "FMCG": ["HINDUNILVR", "ITC", "NESTLEIND", "BRITANNIA", "DABUR", "GODREJCP", "COLPAL", "MARICO", "TATACONSUM", "VBL"],
-    "METAL": ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "SAIL", "NMDC", "NATIONALUM", "HINDZINC", "APLAPOLLO"],
-    "ENERGY": ["RELIANCE", "ONGC", "BPCL", "IOC", "GAIL", "COALINDIA", "NTPC", "POWERGRID", "TATAPOWER"],
+    "AUTO": ["MARUTI", "M&M", "TMPV", "TMCV", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "TVSMOTOR", "ASHOKLEY",
+             "BOSCHLTD", "BHARATFORG", "MOTHERSON", "SONACOMS", "UNOMINDA", "EXIDEIND", "TIINDIA", "MRF"],
+    "IT": ["TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "PERSISTENT", "COFORGE", "MPHASIS", "OFSS",
+           "KPITTECH", "TATAELXSI", "TATATECH", "CYIENT"],
+    "BANK": ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB",
+             "FEDERALBNK", "IDFCFIRSTB", "AUBANK", "CANBK", "BANDHANBNK", "RBLBANK", "YESBANK", "UNIONBANK",
+             "INDIANB", "BANKINDIA"],
+    "FIN SERVICES": ["BAJFINANCE", "BAJAJFINSV", "SBILIFE", "HDFCLIFE", "ICICIGI", "ICICIPRULI", "LICI", "SBICARD",
+                     "CHOLAFIN", "SHRIRAMFIN", "MUTHOOTFIN", "MANAPPURAM", "JIOFIN", "PFC", "RECLTD", "IRFC",
+                     "LICHSGFIN", "POONAWALLA", "HDFCAMC", "CDSL", "BSE", "ANGELONE", "MFSL", "360ONE",
+                     "NUVAMA", "PNBHOUSING", "CAMS", "IREDA", "HUDCO", "LTF", "KFINTECH", "SAMMAANCAP",
+                     "PAYTM", "POLICYBZR"],
+    "PHARMA": ["SUNPHARMA", "CIPLA", "DRREDDY", "DIVISLAB", "LUPIN", "AUROPHARMA", "TORNTPHARM", "ZYDUSLIFE",
+               "ALKEM", "BIOCON", "GLENMARK", "MANKIND", "LAURUSLABS", "GRANULES", "SYNGENE", "PPLPHARMA"],
+    "HEALTHCARE": ["APOLLOHOSP", "MAXHEALTH", "FORTIS", "LALPATHLAB"],
+    "FMCG": ["HINDUNILVR", "ITC", "NESTLEIND", "BRITANNIA", "DABUR", "GODREJCP", "COLPAL", "MARICO",
+             "TATACONSUM", "VBL", "UNITDSPR", "PATANJALI"],
+    "METAL": ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "SAIL", "NMDC", "NATIONALUM",
+              "HINDZINC", "APLAPOLLO", "JSL"],
+    "OIL & GAS": ["RELIANCE", "ONGC", "BPCL", "IOC", "GAIL", "COALINDIA", "HINDPETRO", "OIL", "PETRONET", "IGL"],
+    "POWER": ["NTPC", "POWERGRID", "TATAPOWER", "ADANIGREEN", "ADANIENSOL", "NHPC", "JSWENERGY", "TORNTPOWER",
+              "SUZLON", "INOXWIND", "WAAREEENER", "NTPCGREEN", "POWERINDIA", "PREMIERENE"],
     "REALTY": ["DLF", "GODREJPROP", "OBEROIRLTY", "LODHA", "PRESTIGE", "PHOENIXLTD"],
-    "CAP GOODS": ["LT", "SIEMENS", "ABB", "BHEL", "HAL", "BEL", "CUMMINSIND"],
+    "CAP GOODS": ["LT", "SIEMENS", "ABB", "BHEL", "HAL", "BEL", "CUMMINSIND", "BDL", "MAZDOCK", "COCHINSHIP",
+                  "POLYCAB", "KEI", "HAVELLS", "CGPOWER", "KAYNES", "DIXON", "SOLARINDS", "SUPREMEIND",
+                  "ASTRAL", "NBCC", "RVNL"],
+    "INFRA & LOGISTICS": ["ADANIPORTS", "ADANIENT", "GMRAIRPORT", "IRCTC", "CONCOR", "DELHIVERY", "INDIGO"],
+    "CEMENT": ["ULTRACEMCO", "AMBUJACEM", "SHREECEM", "GRASIM", "DALBHARAT"],
+    "CONSUMER": ["TITAN", "ASIANPAINT", "BERGEPAINT", "PIDILITIND", "TRENT", "DMART", "JUBLFOOD", "PAGEIND",
+                 "KALYANKJIL", "VOLTAS", "BLUESTARCO", "CROMPTON", "INDHOTEL", "NYKAA", "ETERNAL", "SWIGGY"],
+    "CHEMICALS": ["UPL", "SRF", "PIIND", "TATACHEM", "COROMANDEL"],
+    "TELECOM & MEDIA": ["BHARTIARTL", "IDEA", "INDUSTOWER", "TATACOMM", "NAUKRI", "PBFINTECH"],
 }
+SECTOR_OF = {s: sec for sec, syms in SECTORS.items() for s in syms}  # ek symbol = ek sector
+
+# Sector -> NSE index (Index % dikhane ke liye; master me na mile to skip)
+INDEX_SYM = {"BANK": "NIFTY BANK", "IT": "NIFTY IT", "AUTO": "NIFTY AUTO", "PHARMA": "NIFTY PHARMA",
+             "FMCG": "NIFTY FMCG", "METAL": "NIFTY METAL", "REALTY": "NIFTY REALTY",
+             "FIN SERVICES": "NIFTY FIN SERVICE", "OIL & GAS": "NIFTY OIL AND GAS"}
 
 
 # ---------------- helpers ----------------
@@ -53,6 +82,25 @@ def get_quotes(dhan, eq_ids, fut_ids):
         raise RuntimeError(f"quote_data fail: {str(r)[:300]}")
     d = r.get("data", {})
     return d["data"] if "data" in d else d
+
+
+def index_pct(conn, dhan, pct_fn):
+    """Sector index ka % change (NSE index quote se). Fail ho to khali dict."""
+    try:
+        df = conn.inst["_DF"]
+        ix = df[(df["SEM_EXM_EXCH_ID"] == "NSE") & (df["SEM_INSTRUMENT_NAME"] == "INDEX")]
+        m = dict(zip(ix["SEM_TRADING_SYMBOL"].astype(str).str.upper(), ix["SEM_SMST_SECURITY_ID"].astype(int)))
+        ids = {sec: m[s] for sec, s in INDEX_SYM.items() if s in m}
+        if not ids:
+            return {}
+        r = dhan.quote_data({"IDX_I": list(ids.values())})
+        if not isinstance(r, dict) or r.get("status") != "success":
+            return {}
+        d = r.get("data", {})
+        d = (d["data"] if "data" in d else d).get("IDX_I", {})
+        return {sec: pct_fn(d[str(i)]) for sec, i in ids.items() if str(i) in d}
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -214,8 +262,13 @@ try:
         st.session_state["scan_universe"] = build_universe(conn)
     eq, fut = st.session_state["scan_universe"]
 
-    rows = [{"Sector": sec, "Symbol": s, "eq": eq[s], "fut": fut.get(s)}
-            for sec, syms in SECTORS.items() for s in syms if s in eq]
+    # Universe = scrip master ke SAARE F&O stocks (sector sirf label hai; na mile to OTHERS)
+    rows = [{"Sector": SECTOR_OF.get(s, "OTHERS"), "Symbol": s, "eq": eq[s], "fut": fut[s]}
+            for s in sorted(fut) if s in eq]
+    miss = sorted(s for s in fut if s not in eq)  # futures hai par equity ID nahi mili
+    if len(rows) != EXPECTED_FNO or miss:
+        st.warning(f"F&O universe: {len(rows)} stocks (expected {EXPECTED_FNO}). "
+                   f"Equity ID nahi mili: {', '.join(miss) or '-'}")
     u = pd.DataFrame(rows)
     q = get_quotes(dhan, u["eq"].tolist(), u["fut"].dropna().astype(int).tolist())
     qe, qf = q.get("NSE_EQ", {}), q.get("NSE_FNO", {})
@@ -254,7 +307,12 @@ try:
 
     sec = (u.groupby("Sector").agg(Avg_Chg=("%Chg", "mean"), Breadth=("%Chg", lambda s: (s > 0).mean() * 100),
                                    Stocks=("Symbol", "count")).sort_values("Avg_Chg", ascending=False).round(2))
-    top, bot = list(sec.index[:topk]), list(sec.index[-topk:])
+    # Sector index ka asli % (market-cap weighted) - stocks ke simple average se alag hota hai
+    ip = index_pct(conn, dhan, pct) if data_src == "quote" else {}
+    sec["Index %"] = [round(ip[s_], 2) if s_ in ip else float("nan") for s_ in sec.index]
+
+    rank = sec.drop(index="OTHERS", errors="ignore")  # OTHERS ko top/bottom ranking se bahar rakho
+    top, bot = list(rank.index[:topk]), list(rank.index[-topk:])
 
     # OI snapshots (sirf market chalu ho tab save, warna band market ka bekaar snapshot jud jata hai)
     store = oi_store()
@@ -306,6 +364,12 @@ try:
     if n_new:
         st.success(f"\U0001f514 {n_new} naya signal mila: " + ", ".join(f"{s['Symbol']} {s['Signal']}" for s in sigs[-n_new:]))
 
+    # Universe info + jin stocks ka sector tay nahi hua
+    um = sorted(u.loc[u["Sector"] == "OTHERS", "Symbol"])
+    st.caption(f"Total {len(u)} F&O stocks scan hue.")
+    if um:
+        st.caption(f"Sector nahi mila ({len(um)}): " + ", ".join(um) + " -> inhe SECTORS me jod do.")
+
     # ---------- Market Breadth: Advance / Decline ----------
     total = len(u)
     green = int((u["%Chg"] > 0).sum())
@@ -344,6 +408,8 @@ try:
             f_n = len(d_s) - g_n - r_n
             tot_n = max(len(d_s), 1)
             avg = sec.loc[s_name, "Avg_Chg"]
+            idx_v = sec.loc[s_name, "Index %"]
+            idx_txt = "" if pd.isna(idx_v) else f' <span style="color:#666;font-size:12px;">(Index {idx_v:+.2f}%)</span>'
             avg_col = "#15803d" if avg > 0 else ("#b91c1c" if avg < 0 else "#555")
             g_bar = f'<div style="width:{g_n / tot_n * 100:.1f}%;background:#16a34a;color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:22px;">{g_n if g_n else ""}</div>'
             f_bar = f'<div style="width:{f_n / tot_n * 100:.1f}%;background:#9ca3af;"></div>'
@@ -351,7 +417,7 @@ try:
             rows_html.append(f"""
 <div style="margin:0 0 10px 0;">
   <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:14px;margin-bottom:3px;">
-    <span><b>{s_name}</b> <span style="color:{avg_col};font-weight:600;">{avg:+.2f}%</span></span>
+    <span><b>{s_name}</b> <span style="color:{avg_col};font-weight:600;">{avg:+.2f}%</span>{idx_txt}</span>
     <span style="font-size:13px;"><span style="color:#15803d;font-weight:700;">Adv {g_n}</span> &nbsp; <span style="color:#b91c1c;font-weight:700;">Dec {r_n}</span> &nbsp; <span style="color:#888;">/ {len(d_s)}</span></span>
   </div>
   <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:#e5e7eb;">{g_bar}{f_bar}{r_bar}</div>
