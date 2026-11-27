@@ -1,6 +1,8 @@
 # pages/1_Scanner.py
 # Sector strength + OI Spurts + Pullback signals. Main app ka connected Dhan session use karta hai.
-# v3: saare F&O stocks (scrip master se) + naye sectors + OTHERS bucket + 218 count check + sector Index %
+# v4: sector ke saamne Scanner avg % + asli NSE Index % (dono), Divergence badge, robust index matching,
+#     28 unmapped stocks ka sector map
+import re
 import time
 import json
 import datetime as dt
@@ -15,50 +17,72 @@ EXPECTED_FNO = 218  # F&O stocks ki expected ginti
 # Sector -> F&O stocks (edit kar sakte ho). Jo stock yahan nahi hoga wo "OTHERS" me dikhega.
 SECTORS = {
     "AUTO": ["MARUTI", "M&M", "TMPV", "TMCV", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "TVSMOTOR", "ASHOKLEY",
-             "BOSCHLTD", "BHARATFORG", "MOTHERSON", "SONACOMS", "UNOMINDA", "EXIDEIND", "TIINDIA", "MRF"],
+             "BOSCHLTD", "BHARATFORG", "MOTHERSON", "SONACOMS", "UNOMINDA", "EXIDEIND", "TIINDIA", "MRF",
+             "ATHERENERG", "FORCEMOT", "HYUNDAI"],
     "IT": ["TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "PERSISTENT", "COFORGE", "MPHASIS", "OFSS",
-           "KPITTECH", "TATAELXSI", "TATATECH", "CYIENT"],
+           "KPITTECH", "TATAELXSI", "TATATECH", "CYIENT", "LTM", "SAGILITY"],
     "BANK": ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB",
              "FEDERALBNK", "IDFCFIRSTB", "AUBANK", "CANBK", "BANDHANBNK", "RBLBANK", "YESBANK", "UNIONBANK",
-             "INDIANB", "BANKINDIA"],
+             "INDIANB", "BANKINDIA", "CUB", "KARURVYSYA", "MAHABANK", "UJJIVANSFB"],
     "FIN SERVICES": ["BAJFINANCE", "BAJAJFINSV", "SBILIFE", "HDFCLIFE", "ICICIGI", "ICICIPRULI", "LICI", "SBICARD",
                      "CHOLAFIN", "SHRIRAMFIN", "MUTHOOTFIN", "MANAPPURAM", "JIOFIN", "PFC", "RECLTD", "IRFC",
                      "LICHSGFIN", "POONAWALLA", "HDFCAMC", "CDSL", "BSE", "ANGELONE", "MFSL", "360ONE",
                      "NUVAMA", "PNBHOUSING", "CAMS", "IREDA", "HUDCO", "LTF", "KFINTECH", "SAMMAANCAP",
-                     "PAYTM", "POLICYBZR"],
+                     "PAYTM", "POLICYBZR", "ABCAPITAL", "ANANDRATHI", "ICICILIFE", "MCX", "MOTILALOFS",
+                     "NAM-INDIA"],
     "PHARMA": ["SUNPHARMA", "CIPLA", "DRREDDY", "DIVISLAB", "LUPIN", "AUROPHARMA", "TORNTPHARM", "ZYDUSLIFE",
                "ALKEM", "BIOCON", "GLENMARK", "MANKIND", "LAURUSLABS", "GRANULES", "SYNGENE", "PPLPHARMA"],
     "HEALTHCARE": ["APOLLOHOSP", "MAXHEALTH", "FORTIS", "LALPATHLAB"],
     "FMCG": ["HINDUNILVR", "ITC", "NESTLEIND", "BRITANNIA", "DABUR", "GODREJCP", "COLPAL", "MARICO",
-             "TATACONSUM", "VBL", "UNITDSPR", "PATANJALI"],
+             "TATACONSUM", "VBL", "UNITDSPR", "PATANJALI", "GODFRYPHLP", "RADICO"],
     "METAL": ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "SAIL", "NMDC", "NATIONALUM",
               "HINDZINC", "APLAPOLLO", "JSL"],
     "OIL & GAS": ["RELIANCE", "ONGC", "BPCL", "IOC", "GAIL", "COALINDIA", "HINDPETRO", "OIL", "PETRONET", "IGL"],
     "POWER": ["NTPC", "POWERGRID", "TATAPOWER", "ADANIGREEN", "ADANIENSOL", "NHPC", "JSWENERGY", "TORNTPOWER",
-              "SUZLON", "INOXWIND", "WAAREEENER", "NTPCGREEN", "POWERINDIA", "PREMIERENE"],
+              "SUZLON", "INOXWIND", "WAAREEENER", "NTPCGREEN", "POWERINDIA", "PREMIERENE", "ADANIPOWER"],
     "REALTY": ["DLF", "GODREJPROP", "OBEROIRLTY", "LODHA", "PRESTIGE", "PHOENIXLTD"],
     "CAP GOODS": ["LT", "SIEMENS", "ABB", "BHEL", "HAL", "BEL", "CUMMINSIND", "BDL", "MAZDOCK", "COCHINSHIP",
                   "POLYCAB", "KEI", "HAVELLS", "CGPOWER", "KAYNES", "DIXON", "SOLARINDS", "SUPREMEIND",
-                  "ASTRAL", "NBCC", "RVNL"],
+                  "ASTRAL", "NBCC", "RVNL", "APARINDS", "DATAPATTNS", "ENRIN", "GVT&D", "SYRMA"],
     "INFRA & LOGISTICS": ["ADANIPORTS", "ADANIENT", "GMRAIRPORT", "IRCTC", "CONCOR", "DELHIVERY", "INDIGO"],
     "CEMENT": ["ULTRACEMCO", "AMBUJACEM", "SHREECEM", "GRASIM", "DALBHARAT"],
     "CONSUMER": ["TITAN", "ASIANPAINT", "BERGEPAINT", "PIDILITIND", "TRENT", "DMART", "JUBLFOOD", "PAGEIND",
-                 "KALYANKJIL", "VOLTAS", "BLUESTARCO", "CROMPTON", "INDHOTEL", "NYKAA", "ETERNAL", "SWIGGY"],
-    "CHEMICALS": ["UPL", "SRF", "PIIND", "TATACHEM", "COROMANDEL"],
+                 "KALYANKJIL", "VOLTAS", "BLUESTARCO", "CROMPTON", "INDHOTEL", "NYKAA", "ETERNAL", "SWIGGY",
+                 "AMBER", "PGEL", "VMM"],
+    "CHEMICALS": ["UPL", "SRF", "PIIND", "TATACHEM", "COROMANDEL", "ACUTAAS", "NAVINFLUOR"],
     "TELECOM & MEDIA": ["BHARTIARTL", "IDEA", "INDUSTOWER", "TATACOMM", "NAUKRI", "PBFINTECH"],
 }
 SECTOR_OF = {s: sec for sec, syms in SECTORS.items() for s in syms}  # ek symbol = ek sector
 
-# Sector -> NSE index (Index % dikhane ke liye; master me na mile to skip)
-INDEX_SYM = {"BANK": "NIFTY BANK", "IT": "NIFTY IT", "AUTO": "NIFTY AUTO", "PHARMA": "NIFTY PHARMA",
-             "FMCG": "NIFTY FMCG", "METAL": "NIFTY METAL", "REALTY": "NIFTY REALTY",
-             "FIN SERVICES": "NIFTY FIN SERVICE", "OIL & GAS": "NIFTY OIL AND GAS"}
+# Sector -> asli NSE index (alag-alag naam ke options; jo scrip master me pehle mile wahi use hoga).
+# Jin sectors ka koi sahi NSE index nahi (POWER, CAP GOODS, CEMENT, INFRA, TELECOM) unhe jaan-bujhkar khali rakha hai,
+# taki galat index ka % na dikhe. Chaho to yahan apna index jod sakte ho.
+INDEX_ALIASES = {
+    "BANK": ["NIFTY BANK", "BANKNIFTY"],
+    "IT": ["NIFTY IT", "NIFTYIT"],
+    "AUTO": ["NIFTY AUTO"],
+    "PHARMA": ["NIFTY PHARMA"],
+    "HEALTHCARE": ["NIFTY HEALTHCARE INDEX", "NIFTY HEALTHCARE"],
+    "FMCG": ["NIFTY FMCG"],
+    "METAL": ["NIFTY METAL"],
+    "REALTY": ["NIFTY REALTY"],
+    "FIN SERVICES": ["NIFTY FIN SERVICE", "NIFTY FINANCIAL SERVICES", "FINNIFTY", "NIFTY FINSERVICE"],
+    "OIL & GAS": ["NIFTY OIL AND GAS", "NIFTY OIL & GAS"],
+    "CHEMICALS": ["NIFTY CHEMICALS", "NIFTY CHEMICALS INDEX"],
+    "CONSUMER": ["NIFTY INDIA CONSUMPTION", "NIFTY CONSUMPTION"],  # approx (Titan, Trent, DMart, paints...)
+}
+DIV_MIN = 0.10  # dono % itne se zyada hon aur sign ulta ho tabhi Divergence badge
 
 
 # ---------------- helpers ----------------
 def market_is_open(now):
     """now = naive IST datetime. NSE: Mon-Fri 9:15 - 15:30."""
     return now.weekday() < 5 and dt.time(9, 15) <= now.time() <= dt.time(15, 30)
+
+
+def _norm(x):
+    """Naam compare karne ke liye: CAPS, & -> AND, baaki sab symbols/space hata do."""
+    return re.sub(r"[^A-Z0-9]", "", str(x).upper().replace("&", "AND"))
 
 
 def build_universe(conn):
@@ -85,22 +109,36 @@ def get_quotes(dhan, eq_ids, fut_ids):
 
 
 def index_pct(conn, dhan, pct_fn):
-    """Sector index ka % change (NSE index quote se). Fail ho to khali dict."""
+    """Sector index ka asli % change (NSE index quote se).
+    Return: (pct_by_sector, index_name_by_sector, error_text).
+    Naam scrip master ke kai columns me dhoondhta hai (trading symbol / symbol name / custom symbol)."""
     try:
         df = conn.inst["_DF"]
-        ix = df[(df["SEM_EXM_EXCH_ID"] == "NSE") & (df["SEM_INSTRUMENT_NAME"] == "INDEX")]
-        m = dict(zip(ix["SEM_TRADING_SYMBOL"].astype(str).str.upper(), ix["SEM_SMST_SECURITY_ID"].astype(int)))
-        ids = {sec: m[s] for sec, s in INDEX_SYM.items() if s in m}
+        ix = df[df["SEM_INSTRUMENT_NAME"] == "INDEX"]
+        name_cols = [c for c in ("SEM_TRADING_SYMBOL", "SM_SYMBOL_NAME", "SEM_CUSTOM_SYMBOL") if c in ix.columns]
+        by_name = {}
+        for _, row in ix.iterrows():
+            sid = int(row["SEM_SMST_SECURITY_ID"])
+            for c in name_cols:
+                by_name.setdefault(_norm(row[c]), (sid, str(row[c])))
+        ids, names = {}, {}
+        for sec_name, aliases in INDEX_ALIASES.items():
+            for a in aliases:
+                hit = by_name.get(_norm(a))
+                if hit:
+                    ids[sec_name], names[sec_name] = hit[0], hit[1]
+                    break
         if not ids:
-            return {}
+            return {}, {}, "scrip master me koi sector index nahi mila"
         r = dhan.quote_data({"IDX_I": list(ids.values())})
         if not isinstance(r, dict) or r.get("status") != "success":
-            return {}
+            return {}, names, f"index quote fail: {str(r)[:200]}"
         d = r.get("data", {})
         d = (d["data"] if "data" in d else d).get("IDX_I", {})
-        return {sec: pct_fn(d[str(i)]) for sec, i in ids.items() if str(i) in d}
-    except Exception:
-        return {}
+        out = {sec_name: pct_fn(d[str(i)]) for sec_name, i in ids.items() if str(i) in d}
+        return out, names, ""
+    except Exception as e:
+        return {}, {}, f"index error: {e}"
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -307,9 +345,14 @@ try:
 
     sec = (u.groupby("Sector").agg(Avg_Chg=("%Chg", "mean"), Breadth=("%Chg", lambda s: (s > 0).mean() * 100),
                                    Stocks=("Symbol", "count")).sort_values("Avg_Chg", ascending=False).round(2))
-    # Sector index ka asli % (market-cap weighted) - stocks ke simple average se alag hota hai
-    ip = index_pct(conn, dhan, pct) if data_src == "quote" else {}
+    # Sector index ka asli % (full free-float market-cap weight) - stocks ke simple average se alag hota hai
+    if data_src == "quote":
+        ip, ip_names, ip_err = index_pct(conn, dhan, pct)
+    else:
+        ip, ip_names, ip_err = {}, {}, "quote data nahi aaya (daily fallback), isliye Index % skip"
+    sec["Index"] = [ip_names.get(s_, "") for s_ in sec.index]
     sec["Index %"] = [round(ip[s_], 2) if s_ in ip else float("nan") for s_ in sec.index]
+    sec["Diff (Avg-Index)"] = (sec["Avg_Chg"] - sec["Index %"]).round(2)
 
     rank = sec.drop(index="OTHERS", errors="ignore")  # OTHERS ko top/bottom ranking se bahar rakho
     top, bot = list(rank.index[:topk]), list(rank.index[-topk:])
@@ -370,6 +413,13 @@ try:
     if um:
         st.caption(f"Sector nahi mila ({len(um)}): " + ", ".join(um) + " -> inhe SECTORS me jod do.")
 
+    # Index % kis sector ka nahi aaya (taki chupke se gayab na ho)
+    no_idx = [s_ for s_ in sec.index if s_ in INDEX_ALIASES and s_ not in ip]
+    if ip_err or no_idx:
+        st.caption("Index % issue: " + (ip_err + ". " if ip_err else "")
+                   + (f"In sectors ka index quote nahi mila: {', '.join(no_idx)}. " if no_idx else "")
+                   + "Sectors tab me 'Index' column dekho.")
+
     # ---------- Market Breadth: Advance / Decline ----------
     total = len(u)
     green = int((u["%Chg"] > 0).sum())
@@ -409,20 +459,29 @@ try:
             tot_n = max(len(d_s), 1)
             avg = sec.loc[s_name, "Avg_Chg"]
             idx_v = sec.loc[s_name, "Index %"]
-            idx_txt = "" if pd.isna(idx_v) else f' <span style="color:#666;font-size:12px;">(Index {idx_v:+.2f}%)</span>'
             avg_col = "#15803d" if avg > 0 else ("#b91c1c" if avg < 0 else "#555")
+            if pd.isna(idx_v):
+                idx_txt, div_txt = "", ""
+            else:
+                idx_col = "#15803d" if idx_v > 0 else ("#b91c1c" if idx_v < 0 else "#555")
+                idx_txt = (f' <span style="color:#666;font-size:12px;">| Index</span> '
+                           f'<span style="color:{idx_col};font-weight:600;">{idx_v:+.2f}%</span>')
+                is_div = avg * idx_v < 0 and abs(avg) >= DIV_MIN and abs(idx_v) >= DIV_MIN
+                div_txt = (' <span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;'
+                           'padding:1px 6px;border-radius:8px;">\u26a0 Divergence</span>') if is_div else ""
             g_bar = f'<div style="width:{g_n / tot_n * 100:.1f}%;background:#16a34a;color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:22px;">{g_n if g_n else ""}</div>'
             f_bar = f'<div style="width:{f_n / tot_n * 100:.1f}%;background:#9ca3af;"></div>'
             r_bar = f'<div style="width:{r_n / tot_n * 100:.1f}%;background:#dc2626;color:#fff;font-size:12px;font-weight:700;text-align:center;line-height:22px;">{r_n if r_n else ""}</div>'
             rows_html.append(f"""
 <div style="margin:0 0 10px 0;">
   <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:14px;margin-bottom:3px;">
-    <span><b>{s_name}</b> <span style="color:{avg_col};font-weight:600;">{avg:+.2f}%</span>{idx_txt}</span>
+    <span><b>{s_name}</b> <span style="color:#666;font-size:12px;">Scanner</span> <span style="color:{avg_col};font-weight:600;">{avg:+.2f}%</span>{idx_txt}{div_txt}</span>
     <span style="font-size:13px;"><span style="color:#15803d;font-weight:700;">Adv {g_n}</span> &nbsp; <span style="color:#b91c1c;font-weight:700;">Dec {r_n}</span> &nbsp; <span style="color:#888;">/ {len(d_s)}</span></span>
   </div>
   <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:#e5e7eb;">{g_bar}{f_bar}{r_bar}</div>
 </div>""")
         st.markdown("#### Sector-wise Advance / Decline")
+        st.caption("Scanner = tumhare F&O stocks ka simple average | Index = asli NSE sector index (full weightage)")
         st.markdown("".join(ln.strip() for ln in "".join(rows_html).splitlines()), unsafe_allow_html=True)
     except Exception as ce:
         st.caption(f"Sector chart error: {ce}")
