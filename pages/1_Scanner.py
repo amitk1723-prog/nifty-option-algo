@@ -138,12 +138,18 @@ with st.sidebar:
     vol_ratio = st.slider("Pullback volume < avg x", 0.3, 1.2, 0.8, 0.05)
     oi_min = st.slider("OI lookback (min)", 5, 60, 15)
     oi_thr = st.slider("Min OI change %", 0.5, 10.0, 2.0, 0.5)
-    auto = st.checkbox("Auto refresh", value=False)
     gap = st.number_input("Refresh seconds", 60, 600, 120, 30)
-    go = st.button("Scan now", use_container_width=True, type="primary")
+
+# Scan button + Auto refresh main page par (mobile me sidebar kholne ki zarurat nahi)
+bc1, bc2 = st.columns([1, 1])
+with bc1:
+    go = st.button("🔄 Scan now", use_container_width=True, type="primary")
+with bc2:
+    auto = st.toggle("Auto refresh", value=False, key="scan_auto") if hasattr(st, "toggle") \
+        else st.checkbox("Auto refresh", value=False, key="scan_auto")
 
 if not (go or auto):
-    st.caption("Sidebar me Scan now dabao.")
+    st.caption("Upar Scan now dabao. (Settings sidebar me hain)")
     st.stop()
 
 try:
@@ -173,7 +179,7 @@ try:
 
     # OI snapshots
     store = oi_store()
-    now = dt.datetime.now()
+    now = pd.Timestamp.now(tz=IST).to_pydatetime().replace(tzinfo=None)  # IST time
     if not store["snaps"] or (now - store["snaps"][-1][0]).total_seconds() >= 60:
         store["snaps"].append((now, {r.Symbol: (r.OI, r.LTP) for r in u.itertuples() if pd.notna(r.OI)}))
     store["snaps"] = [x for x in store["snaps"] if (now - x[0]).total_seconds() < 4 * 3600]
@@ -186,55 +192,4 @@ try:
             if r.Symbol in base[1] and pd.notna(r.OI) and base[1][r.Symbol][0]:
                 o0, p0 = base[1][r.Symbol]
                 oc, pc_ = (r.OI - o0) / o0 * 100, (r.LTP - p0) / p0 * 100
-                if abs(oc) >= oi_thr:
-                    oi_rows.append({"Symbol": r.Symbol, "Sector": r.Sector, "OI %": round(oc, 2),
-                                    "Price % (same window)": round(pc_, 2), "Type": oi_class(pc_, oc)})
-    oi_df = pd.DataFrame(oi_rows).sort_values("OI %", key=abs, ascending=False) if oi_rows else pd.DataFrame()
-
-    # signals
-    cands = []
-    for side, secs in (("BUY", top), ("SELL", bot)):
-        d = u[u["Sector"].isin(secs)]
-        d = d[d["%Chg"] > 0] if side == "BUY" else d[d["%Chg"] < 0]
-        for r in d.reindex(d["%Chg"].abs().sort_values(ascending=False).index).head(max_n).itertuples():
-            cands.append((side, r))
-    sigs, prog = [], st.progress(0.0, text="Signals check ho rahe hain...")
-    for i, (side, r) in enumerate(cands):
-        try:
-            s = check_signal(get_candles_5m(dhan, r.eq), side, lookback, vol_ratio)
-        except Exception:
-            s = None
-        if s:
-            oi_t = ""
-            if not oi_df.empty and r.Symbol in set(oi_df["Symbol"]):
-                oi_t = oi_df[oi_df["Symbol"] == r.Symbol].iloc[0]["Type"]
-            sigs.append({"Symbol": r.Symbol, "Sector": r.Sector, **s, "OI": oi_t})
-        prog.progress((i + 1) / max(len(cands), 1))
-        time.sleep(0.3)  # Dhan data API rate limit
-    prog.empty()
-
-    st.caption(f"Last scan: {now.strftime('%H:%M:%S')} | Top: {', '.join(top)} | Bottom: {', '.join(bot)}")
-    t1, t2, t3, t4 = st.tabs(["Signals", "Sectors", "OI Spurts", "Stocks"])
-    with t1:
-        if sigs:
-            st.dataframe(pd.DataFrame(sigs), use_container_width=True)
-        else:
-            st.info("Abhi koi signal nahi.")
-    with t2:
-        st.dataframe(sec, use_container_width=True)
-    with t3:
-        if base is None:
-            st.info("Pehla snapshot save hua. Kuch minute baad dobara scan karo.")
-        elif oi_df.empty:
-            st.info(f"Pichle ~{int((now - base[0]).total_seconds() / 60)} min me {oi_thr}% se zyada OI change nahi.")
-        else:
-            st.dataframe(oi_df, use_container_width=True)
-    with t4:
-        st.dataframe(u[["Sector", "Symbol", "LTP", "%Chg", "Volume", "OI"]].sort_values("%Chg", ascending=False),
-                     use_container_width=True)
-except Exception as e:
-    st.error(f"Scanner error: {e}")
-
-if auto:
-    time.sleep(int(gap))
-    st.rerun()
+                if abs(oc)
